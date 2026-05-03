@@ -54,6 +54,19 @@ registerScaffoldActions();
 import { registerLuaSetupContribution } from './lua/luaSetupService.js';
 registerLuaSetupContribution();
 
+// .fxgraph editor association (Phase F). The full Blueprint-style
+// React-Flow webview ships as a follow-up patch; this patch installs
+// the file-type association so the IDE knows to treat .fxgraph files
+// as Cfx visual graphs.
+import { registerFxGraphEditor } from './graph/fxgraphEditorContribution.js';
+registerFxGraphEditor();
+
+// Cross-cutting Cfx commands (Phase G). Locate exe, download artifacts,
+// natives reference, debug print. Most other commands ship with their
+// owning subsystem in earlier phases.
+import { registerCfxCommands } from './commands/cfxCommands.js';
+registerCfxCommands();
+
 /**
  * Top-level Cfx Studio contribution. The skeleton patch (0015) registers the
  * lifecycle hook only; subsequent patches plug feature services into it
