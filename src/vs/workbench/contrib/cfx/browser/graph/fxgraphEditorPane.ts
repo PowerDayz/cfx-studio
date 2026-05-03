@@ -55,6 +55,7 @@ export class FxGraphEditorPane extends EditorPane {
 	private webviewReady = false;
 	private pendingInit: HostToWebviewMessage | undefined;
 	private currentResource: import('../../../../../base/common/uri.js').URI | undefined;
+	private currentScope: 'client' | 'server' | 'shared' = 'client';
 	private saveTimer: ReturnType<typeof setTimeout> | undefined;
 	private pendingSaveDoc: unknown;
 
@@ -109,6 +110,11 @@ export class FxGraphEditorPane extends EditorPane {
 			this.notificationService.error(localize('cfx.fxgraph.readFailed', 'Cfx: failed to load {0}: {1}', input.resource.path, String(err)));
 			return;
 		}
+
+		// Track the doc's declared scope so palette native searches can
+		// be filtered (client / server / shared).
+		const scope = (doc as { scope?: string } | undefined)?.scope;
+		this.currentScope = scope === 'server' || scope === 'shared' ? scope : 'client';
 
 		// Resolve per-resource game mode (walks up to fxmanifest.lua).
 		const folder = input.resource.with({ path: input.resource.path.replace(/\/[^/]+$/, '') });
@@ -257,7 +263,7 @@ export class FxGraphEditorPane extends EditorPane {
 
 	private handleNativeSearch(query: string): void {
 		if (!this.nativesService.isLoaded) return;
-		const results = this.nativesService.search(query, 200).map((n) => ({
+		const results = this.nativesService.search(query, 200, this.currentScope).map((n) => ({
 			hash: n.hash,
 			ns: n.ns,
 			name: n.name,

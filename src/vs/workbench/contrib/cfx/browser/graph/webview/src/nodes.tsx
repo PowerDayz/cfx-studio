@@ -8,6 +8,13 @@ import { InlineValueEditor } from './InlineEditor.js';
 interface FlowData extends Record<string, unknown> {
 	bnode: BNode;
 	onPatch: (next: BNode) => void;
+	/**
+	 * Set of `${nodeId}|${pinId}` keys for non-primitive arg pins that
+	 * have no incoming value edge. Pin renderers consult this to draw a
+	 * red marker — the codegen will emit `nil` for these, which is
+	 * usually wrong at runtime, hence the visual flag.
+	 */
+	missingPins?: ReadonlySet<string>;
 }
 
 const PIN_COLOR: Record<string, string> = {
@@ -90,7 +97,12 @@ const ExecCallNode: React.FC<{ data: FlowData }> = ({ data }) => {
 				</div>
 			</div>
 			{n.argPins.map((p) => (
-				<PinRow key={p.id} pin={p} side="input" />
+				<PinRow
+					key={p.id}
+					pin={p}
+					side="input"
+					missing={data.missingPins?.has(`${n.id}|${p.id}`)}
+				/>
 			))}
 			{n.resultPin && (
 				<div className="pin-row">
@@ -127,7 +139,12 @@ const ControlNode: React.FC<{ data: FlowData }> = ({ data }) => {
 				</div>
 			</div>
 			{n.argPins.map((p) => (
-				<PinRow key={p.id} pin={p} side="input" />
+				<PinRow
+					key={p.id}
+					pin={p}
+					side="input"
+					missing={data.missingPins?.has(`${n.id}|${p.id}`)}
+				/>
 			))}
 		</div>
 	);
@@ -140,7 +157,12 @@ const PureNode: React.FC<{ data: FlowData }> = ({ data }) => {
 		<div className="bnode kind-pure">
 			<div className="header"><span>{title}</span></div>
 			{n.argPins.map((p) => (
-				<PinRow key={p.id} pin={p} side="input" />
+				<PinRow
+					key={p.id}
+					pin={p}
+					side="input"
+					missing={data.missingPins?.has(`${n.id}|${p.id}`)}
+				/>
 			))}
 			<div className="pin-row">
 				<div />
@@ -207,7 +229,12 @@ const VarSetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 				</div>
 			</div>
 			{n.argPins.map((p) => (
-				<PinRow key={p.id} pin={p} side="input" />
+				<PinRow
+					key={p.id}
+					pin={p}
+					side="input"
+					missing={data.missingPins?.has(`${n.id}|${p.id}`)}
+				/>
 			))}
 		</div>
 	);
@@ -228,19 +255,34 @@ const CommentNode: React.FC<{ data: FlowData }> = ({ data }) => {
 interface PinRowProps {
 	pin: PinDef;
 	side: 'input' | 'output';
+	missing?: boolean;
 }
 
 // Input pins are pure connection points — no inline default-value editor.
 // To supply a literal value, the user adds a Literal node and connects
-// its output pin to this input. Literal nodes ARE the way to author
-// constants; arg pins on call/control nodes are connection sockets only.
-const PinRow: React.FC<PinRowProps> = ({ pin, side }) => {
+// its output pin to this input. When `missing` is true the pin renders
+// with a small red dot — the codegen will emit `nil` for this slot,
+// which usually breaks at runtime, so it's worth flagging.
+const PinRow: React.FC<PinRowProps> = ({ pin, side, missing }) => {
 	if (side === 'input') {
 		return (
 			<div className="pin-row">
 				<div className="pin left">
 					<ValueHandle id={pin.id} type="target" pinType={pin.type} />
 					<span>{pin.name}</span>
+					{missing && (
+						<span
+							title={`unconnected ${pin.type} pin — compiles to nil`}
+							style={{
+								display: 'inline-block',
+								width: 6,
+								height: 6,
+								borderRadius: '50%',
+								background: 'var(--vscode-errorForeground, #f48771)',
+								marginLeft: 4,
+							}}
+						/>
+					)}
 				</div>
 				<div />
 			</div>
