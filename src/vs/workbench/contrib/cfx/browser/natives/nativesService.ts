@@ -24,9 +24,13 @@ class NativesService extends Disposable implements INativesService {
 	private _mode: GameMode = GameMode.FiveM;
 	private _natives: ReadonlyArray<CfxNativeDef> = [];
 	private _byName = new Map<string, CfxNativeDef>();
+	private _isLoaded = false;
 
 	private readonly _onDidChangeMode = this._register(new Emitter<GameMode>());
 	readonly onDidChangeMode: Event<GameMode> = this._onDidChangeMode.event;
+
+	private readonly _onDidLoad = this._register(new Emitter<void>());
+	readonly onDidLoad: Event<void> = this._onDidLoad.event;
 
 	constructor(
 		@IFileService private readonly fileService: IFileService,
@@ -43,6 +47,10 @@ class NativesService extends Disposable implements INativesService {
 			void this.loadForMode(mode);
 			this._onDidChangeMode.fire(mode);
 		}));
+	}
+
+	get isLoaded(): boolean {
+		return this._isLoaded;
 	}
 
 	get mode(): GameMode {
@@ -86,9 +94,12 @@ class NativesService extends Disposable implements INativesService {
 			this._byName = new Map(this._natives.map((n) => [n.name, n]));
 			this.logService.info(`[cfx] natives index loaded: ${this._natives.length} entries (mode=${mode})`);
 		} catch (err) {
-			this.logService.warn(`[cfx] failed to load natives JSON for ${mode}: ${String(err)}`);
+			this.logService.warn(`[cfx] failed to load natives JSON for ${mode} (${uri.toString()}): ${String(err)}`);
 			this._natives = [];
 			this._byName = new Map();
+		} finally {
+			this._isLoaded = true;
+			this._onDidLoad.fire();
 		}
 	}
 }

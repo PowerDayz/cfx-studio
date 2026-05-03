@@ -39,6 +39,18 @@ export interface INativesService {
 
 	/** Fires when the loaded mode changes (e.g. workspace gamename flipped). */
 	readonly onDidChangeMode: Event<GameMode>;
+
+	/**
+	 * Fires every time a load attempt settles (success or failure). Use
+	 * this from views to know when to re-render — `getAll()` may return
+	 * an empty array before the initial async load completes, so a view
+	 * that subscribes only to `onDidChangeMode` would never see the
+	 * first batch of natives.
+	 */
+	readonly onDidLoad: Event<void>;
+
+	/** True once at least one load has settled. */
+	readonly isLoaded: boolean;
 }
 
 export const INativesService = createDecorator<INativesService>('cfxNativesService');

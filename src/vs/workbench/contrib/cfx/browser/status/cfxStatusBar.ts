@@ -6,8 +6,9 @@
 import { Disposable, IDisposable } from '../../../../../base/common/lifecycle.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
-import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
+import { resolveFxServerPath } from '../server/firstRunPrompt.js';
 import {
 	Extensions as WorkbenchExtensions,
 	IWorkbenchContribution,
@@ -113,10 +114,14 @@ class PlayServerAction extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const { resolveFxServerPath } = await import('../server/firstRunPrompt.js');
-		const exePath = await resolveFxServerPath(accessor);
+		// Capture the long-lived services BEFORE any await — ServicesAccessor
+		// is invalidated as soon as the synchronous span of run() ends.
+		const instantiationService = accessor.get(IInstantiationService);
+		const fxServer = accessor.get(IFXServerService);
+
+		const exePath = await resolveFxServerPath(instantiationService);
 		if (!exePath) return;
-		await accessor.get(IFXServerService).start();
+		await fxServer.start();
 	}
 }
 

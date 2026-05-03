@@ -4,8 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize, localize2 } from '../../../../../nls.js';
-import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
+import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
+import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
 import { dirname, joinPath } from '../../../../../base/common/resources.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
@@ -13,6 +15,7 @@ import { IQuickInputService } from '../../../../../platform/quickinput/common/qu
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IResourceDiscoveryService } from '../../common/resources.js';
 import { IServerCfgService } from '../../common/serverCfg.js';
+import { ResourcesViewPane } from './resourcesView.js';
 
 /**
  * Cross-cutting actions on the Resources tree. These live as registered
@@ -210,9 +213,62 @@ class ShowStatusLegendAction extends Action2 {
 	}
 }
 
+class RefreshResourcesAction extends Action2 {
+	static readonly ID = 'cfx.resources.refresh';
+	constructor() {
+		super({
+			id: RefreshResourcesAction.ID,
+			title: localize2('cfx.resources.refresh', 'Cfx: Refresh Resources'),
+			category: localize2('cfx.category', 'Cfx Studio'),
+			f1: true,
+			icon: Codicon.refresh,
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		await accessor.get(IResourceDiscoveryService).refresh();
+	}
+}
+
+const whenViewIsResources = ContextKeyExpr.equals('view', ResourcesViewPane.ID);
+
 export function registerResourceActions(): void {
 	registerAction2(RenameResourceAction);
 	registerAction2(DeleteResourceAction);
 	registerAction2(ReorderEnsureChainAction);
 	registerAction2(ShowStatusLegendAction);
+	registerAction2(RefreshResourcesAction);
+
+	// Title-bar buttons on the Resources view (right-side icons).
+	MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
+		command: {
+			id: 'cfx.scaffold.new',
+			title: localize('cfx.scaffold.new.short', 'New Resource'),
+			icon: Codicon.add,
+		},
+		when: whenViewIsResources,
+		group: 'navigation',
+		order: 1,
+	});
+
+	MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
+		command: {
+			id: RefreshResourcesAction.ID,
+			title: localize('cfx.resources.refresh.short', 'Refresh'),
+			icon: Codicon.refresh,
+		},
+		when: whenViewIsResources,
+		group: 'navigation',
+		order: 2,
+	});
+
+	MenuRegistry.appendMenuItem(MenuId.ViewTitle, {
+		command: {
+			id: ShowStatusLegendAction.ID,
+			title: localize('cfx.resources.legend.short', 'Status legend'),
+			icon: Codicon.info,
+		},
+		when: whenViewIsResources,
+		group: 'navigation',
+		order: 3,
+	});
 }
