@@ -73,6 +73,12 @@ registerFxGraphEditor();
 import { registerCfxCommands } from './commands/cfxCommands.js';
 registerCfxCommands();
 
+// .fxgraph compiler (Phase F finishing piece — patch 0029). Adds the
+// cfx.fxgraph.compile command that compiles the active .fxgraph file
+// to a sibling .lua via the shared/visual codegen.
+import { registerFxGraphCompiler } from './graph/fxgraphCompiler.js';
+registerFxGraphCompiler();
+
 /**
  * Top-level Cfx Studio contribution. The skeleton patch (0015) registers the
  * lifecycle hook only; subsequent patches plug feature services into it
