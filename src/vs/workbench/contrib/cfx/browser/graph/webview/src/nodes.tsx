@@ -1,9 +1,31 @@
-import React from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import React, { useState } from 'react';
+import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react';
 
 import type { BNode, PinDef } from '../../../../_shared/visual/dist/doc.js';
 import type { EditorType } from '../../../../_shared/visual/dist/types.js';
 import { InlineValueEditor } from './InlineEditor.js';
+
+/**
+ * SCREAMING_SNAKE_CASE → PascalCase. Mirrors the helper used in
+ * shared/visual/codegen.ts so the on-canvas header reads exactly like
+ * the Lua identifier the codegen emits (`DROP_PLAYER` → `DropPlayer`).
+ */
+function snakeToPascal(s: string): string {
+	return s
+		.toLowerCase()
+		.split('_')
+		.filter((p) => p.length > 0)
+		.map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+		.join('');
+}
+
+function nativeDisplay(catalogName: string): string {
+	// Catalog names like `_NETWORK_FOO_BAR` keep their leading underscore
+	// in the Lua runtime (`_NetworkFooBar`); preserve that prefix while
+	// PascalCasing the rest.
+	if (catalogName.startsWith('_')) return '_' + snakeToPascal(catalogName.slice(1));
+	return snakeToPascal(catalogName);
+}
 
 interface FlowData extends Record<string, unknown> {
 	bnode: BNode;
@@ -35,7 +57,7 @@ const PIN_COLOR: Record<string, string> = {
 	pointer: '#98a2b3',
 };
 
-export const BlueprintNode: React.FC<NodeProps<{ data: FlowData; type: 'blueprint' }>> = ({ data }) => {
+export const BlueprintNode: React.FC<NodeProps<{ data: FlowData; type: 'blueprint' }>> = ({ data, selected }) => {
 	const n = data.bnode;
 	switch (n.kind) {
 		case 'event': return <EventNode data={data} />;
@@ -45,7 +67,7 @@ export const BlueprintNode: React.FC<NodeProps<{ data: FlowData; type: 'blueprin
 		case 'literal': return <LiteralNode data={data} />;
 		case 'var-get': return <VarGetNode data={data} />;
 		case 'var-set': return <VarSetNode data={data} />;
-		case 'comment': return <CommentNode data={data} />;
+		case 'comment': return <CommentNode data={data} selected={selected} />;
 	}
 };
 
@@ -79,7 +101,7 @@ const EventNode: React.FC<{ data: FlowData }> = ({ data }) => {
 
 const ExecCallNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'exec-call' }>;
-	const title = n.callee === 'invoke_native' && n.nativeName ? n.nativeName : n.callee;
+	const title = n.callee === 'invoke_native' && n.nativeName ? nativeDisplay(n.nativeName) : n.callee;
 	return (
 		<div className="bnode kind-exec-call">
 			<div className="header">
@@ -152,7 +174,7 @@ const ControlNode: React.FC<{ data: FlowData }> = ({ data }) => {
 
 const PureNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'pure' }>;
-	const title = n.callee === 'invoke_native' && n.nativeName ? n.nativeName : n.callee;
+	const title = n.callee === 'invoke_native' && n.nativeName ? nativeDisplay(n.nativeName) : n.callee;
 	return (
 		<div className="bnode kind-pure">
 			<div className="header"><span>{title}</span></div>
@@ -240,15 +262,73 @@ const VarSetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	);
 };
 
-const CommentNode: React.FC<{ data: FlowData }> = ({ data }) => {
+const CommentNode: React.FC<{ data: FlowData; selected?: boolean }> = ({ data, selected }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'comment' }>;
+	const [editing, setEditing] = useState(false);
+	const w = n.size?.w ?? 240;
+	const h = n.size?.h ?? 120;
 	return (
-		<div className="bnode" style={{ background: 'rgba(255, 200, 80, 0.1)', borderColor: 'rgba(255, 200, 80, 0.4)', minWidth: n.size?.w ?? 200 }}>
-			<div className="header" style={{ background: 'transparent', color: 'inherit' }}>
-				<span>📝 comment</span>
+		<>
+			<NodeResizer
+				color="rgba(255, 200, 80, 0.6)"
+				isVisible={selected}
+				minWidth={140}
+				minHeight={60}
+				onResizeEnd={(_e, params) => {
+					data.onPatch({ ...n, size: { w: params.width, h: params.height } });
+				}}
+			/>
+			<div
+				className="bnode kind-comment"
+				style={{
+					width: w,
+					height: h,
+					background: 'rgba(255, 200, 80, 0.10)',
+					borderColor: 'rgba(255, 200, 80, 0.45)',
+					display: 'flex',
+					flexDirection: 'column',
+				}}
+				onDoubleClick={() => setEditing(true)}
+			>
+				<div className="header" style={{ background: 'transparent', color: 'inherit' }}>
+					<span>📝 comment</span>
+				</div>
+				{editing ? (
+					<textarea
+						autoFocus
+						defaultValue={n.text ?? ''}
+						style={{
+							flex: 1,
+							background: 'transparent',
+							color: 'inherit',
+							border: 'none',
+							outline: 'none',
+							resize: 'none',
+							padding: 8,
+							font: 'inherit',
+							whiteSpace: 'pre-wrap',
+						}}
+						onBlur={(e) => {
+							setEditing(false);
+							if (e.target.value !== n.text) {
+								data.onPatch({ ...n, text: e.target.value });
+							}
+						}}
+						onKeyDown={(e) => {
+							// Esc commits and exits edit; Enter inserts newline (default).
+							if (e.key === 'Escape') {
+								(e.target as HTMLTextAreaElement).blur();
+							}
+							e.stopPropagation();
+						}}
+					/>
+				) : (
+					<div style={{ flex: 1, padding: 8, fontSize: 12, whiteSpace: 'pre-wrap', overflow: 'auto' }}>
+						{n.text || <span style={{ opacity: 0.5 }}>Double-click to edit comment</span>}
+					</div>
+				)}
 			</div>
-			<div style={{ padding: 8, fontSize: 12, whiteSpace: 'pre-wrap' }}>{n.text}</div>
-		</div>
+		</>
 	);
 };
 

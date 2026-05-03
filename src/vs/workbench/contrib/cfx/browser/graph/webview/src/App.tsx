@@ -181,22 +181,32 @@ function EditorInner() {
 
 	// Exec edges render as animated dashed white "thread of execution"
 	// lines (the deprecated editor's signature look). Value edges use a
-	// solid stroke coloured by their pin type.
+	// solid stroke coloured by their pin type. Vector3-projected edges
+	// (component='x'|'y'|'z') get a small `(x)` label at the target so
+	// the field projection is visible.
 	useEffect(() => {
 		setEdges(
-			doc.edges.map((e) => ({
-				id: e.id,
-				source: e.fromNodeId,
-				target: e.toNodeId,
-				sourceHandle: e.fromPinId,
-				targetHandle: e.kind === 'value' ? (e as ValueEdge).toPinId : 'in',
-				type: e.kind === 'exec' ? 'smoothstep' : 'default',
-				animated: e.kind === 'exec',
-				data: { kind: e.kind },
-				style: e.kind === 'exec'
-					? { stroke: '#fff', strokeWidth: 2, strokeDasharray: '6 6' }
-					: { stroke: pinColorOf(e, doc), strokeWidth: 1.5 },
-			})),
+			doc.edges.map((e) => {
+				const isExec = e.kind === 'exec';
+				const ve = e.kind === 'value' ? (e as ValueEdge) : undefined;
+				return {
+					id: e.id,
+					source: e.fromNodeId,
+					target: e.toNodeId,
+					sourceHandle: e.fromPinId,
+					targetHandle: isExec ? 'in' : ve!.toPinId,
+					type: isExec ? 'smoothstep' : 'default',
+					animated: isExec,
+					data: { kind: e.kind },
+					label: ve?.component ? `(${ve.component})` : undefined,
+					labelStyle: ve?.component ? { fill: 'var(--vscode-editor-foreground, #ddd)', fontSize: 11 } : undefined,
+					labelBgStyle: ve?.component ? { fill: 'var(--vscode-editorWidget-background, #2a2a2a)' } : undefined,
+					labelBgPadding: ve?.component ? [3, 1] as [number, number] : undefined,
+					style: isExec
+						? { stroke: '#fff', strokeWidth: 2, strokeDasharray: '6 6' }
+						: { stroke: pinColorOf(e, doc), strokeWidth: 1.5 },
+				};
+			}),
 		);
 	}, [doc, setEdges]);
 
@@ -258,6 +268,16 @@ function EditorInner() {
 				edges2 = [...edges2, ne];
 			} else {
 				edges2 = edges2.filter((e) => !(e.kind === 'value' && e.toNodeId === conn.target && e.toPinId === conn.targetHandle));
+				// vector3 → number: infer the projected component from the
+				// target pin's name suffix (posX → x, posY → y, posZ → z).
+				// Anything else defaults to x; the user can switch via the
+				// edge context menu later.
+				let component: 'x' | 'y' | 'z' | undefined;
+				if (sourceKind.type === 'vector3' && (targetKind.type === 'number' || targetKind.type === 'integer')) {
+					const targetPinName = pinNameOf(toNode, conn.targetHandle ?? 'in') ?? '';
+					const last = targetPinName.slice(-1).toLowerCase();
+					component = last === 'x' || last === 'y' || last === 'z' ? (last as 'x' | 'y' | 'z') : 'x';
+				}
 				const ne: ValueEdge = {
 					id: nextEdgeId(),
 					kind: 'value',
@@ -265,6 +285,7 @@ function EditorInner() {
 					fromPinId: conn.sourceHandle ?? 'result',
 					toNodeId: conn.target!,
 					toPinId: conn.targetHandle ?? 'in',
+					...(component ? { component } : {}),
 				};
 				edges2 = [...edges2, ne];
 			}
@@ -285,18 +306,50 @@ function EditorInner() {
 		openQuickAddAt(me.clientX, me.clientY);
 	}, [openQuickAddAt]);
 
+	const duplicateSelection = useCallback(() => {
+		updateDoc((d) => {
+			const sel = nodes.filter((n) => n.selected).map((n) => n.id);
+			if (sel.length === 0) return d;
+			const idMap = new Map<string, string>();
+			const cloned: BNode[] = [];
+			for (const id of sel) {
+				const n = d.nodes.find((x) => x.id === id);
+				if (!n) continue;
+				const newId = `${n.kind.replace(/[^a-z]/g, '')}_${Math.random().toString(36).slice(2, 8)}`;
+				idMap.set(n.id, newId);
+				const offsetPos = { x: (n.pos?.x ?? 0) + 32, y: (n.pos?.y ?? 0) + 32 };
+				cloned.push({ ...n, id: newId, pos: offsetPos } as BNode);
+			}
+			// Only clone edges whose BOTH endpoints are in the selection
+			// — otherwise the cloned edge would re-attach to the same
+			// outside node and the user gets duplicate parallel wires.
+			const newEdges: BEdge[] = [];
+			for (const e of d.edges) {
+				const fromMapped = idMap.get(e.fromNodeId);
+				const toMapped = idMap.get(e.toNodeId);
+				if (!fromMapped || !toMapped) continue;
+				newEdges.push({ ...e, id: `e_${Math.random().toString(36).slice(2, 8)}`, fromNodeId: fromMapped, toNodeId: toMapped } as BEdge);
+			}
+			return { ...d, nodes: [...d.nodes, ...cloned], edges: [...d.edges, ...newEdges] };
+		});
+	}, [updateDoc, nodes]);
+
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === ' ' && !isInputFocused()) {
+			if (isInputFocused()) return;
+			if (e.key === ' ') {
 				e.preventDefault();
 				openQuickAddAt(window.innerWidth / 2, window.innerHeight / 2);
 			} else if (e.key === 'Escape') {
 				setQuickAdd(null);
+			} else if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+				e.preventDefault();
+				duplicateSelection();
 			}
 		};
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
-	}, [openQuickAddAt]);
+	}, [openQuickAddAt, duplicateSelection]);
 
 	// Pin-drag → empty canvas opens the QuickAddMenu pre-filtered to
 	// nodes that have a compatible pin on the OPPOSITE side, and wires
@@ -358,6 +411,59 @@ function EditorInner() {
 	const counts = useMemo(() => `${doc.nodes.length} nodes · ${doc.edges.length} edges`, [doc]);
 	const missingCount = missingPins.size;
 
+	const autoArrange = useCallback(() => {
+		updateDoc((d) => {
+			// Layered LR: BFS from each event's exec output, assigning
+			// `depth` (column) per visited node. Node positions become
+			// (depth*220, lane*90) where `lane` is the visit order at
+			// that depth. Unvisited nodes (no exec ancestor) drop to a
+			// dedicated "free" lane below the main flow.
+			const depthOf = new Map<string, number>();
+			const next = (id: string, pin: string): string[] => {
+				const out: string[] = [];
+				for (const e of d.edges) {
+					if (e.kind === 'exec' && e.fromNodeId === id && e.fromPinId === pin) out.push(e.toNodeId);
+				}
+				return out;
+			};
+			const eventNodes = d.nodes.filter((n) => n.kind === 'event');
+			let maxDepth = 0;
+			for (const ev of eventNodes) {
+				const queue: { id: string; depth: number }[] = [{ id: ev.id, depth: 0 }];
+				while (queue.length > 0) {
+					const { id, depth } = queue.shift()!;
+					const prior = depthOf.get(id);
+					if (prior !== undefined && prior >= depth) continue;
+					depthOf.set(id, depth);
+					maxDepth = Math.max(maxDepth, depth);
+					const node = d.nodes.find((x) => x.id === id);
+					if (!node) continue;
+					if (node.kind === 'event') {
+						for (const o of node.outExec) for (const t of next(node.id, o.id)) queue.push({ id: t, depth: depth + 1 });
+					} else if (node.kind === 'exec-call' || node.kind === 'var-set') {
+						for (const o of node.outExec) for (const t of next(node.id, o.id)) queue.push({ id: t, depth: depth + 1 });
+					} else if (node.kind === 'control') {
+						for (const o of node.outExecBranches) for (const t of next(node.id, o.id)) queue.push({ id: t, depth: depth + 1 });
+					}
+				}
+			}
+			const laneByDepth = new Map<number, number>();
+			const positioned = d.nodes.map((n) => {
+				const depth = depthOf.get(n.id);
+				if (depth === undefined) {
+					// Off-graph (pure value sources, comments, free literals) drop below.
+					const lane = (laneByDepth.get(-1) ?? 0);
+					laneByDepth.set(-1, lane + 1);
+					return { ...n, pos: { x: lane * 220, y: (maxDepth + 2) * 90 } } as BNode;
+				}
+				const lane = (laneByDepth.get(depth) ?? 0);
+				laneByDepth.set(depth, lane + 1);
+				return { ...n, pos: { x: depth * 220, y: lane * 90 } } as BNode;
+			});
+			return { ...d, nodes: positioned };
+		});
+	}, [updateDoc]);
+
 	return (
 		<div className="editor-host">
 			<div className="editor-toolbar">
@@ -377,12 +483,26 @@ function EditorInner() {
 					</span>
 				)}
 				<span style={{ flex: 1 }} />
-				<button onClick={() => {
-					const flow = flowRef.current;
-					if (!flow) return;
-					const center = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-					setQuickAdd({ x: center.x, y: center.y });
-				}}>+ Add Node (Space)</button>
+				<button
+					onClick={() => {
+						const raw = window.prompt('Variable name and type, e.g. `myCar: vehicle` or `score: integer`');
+						if (!raw) return;
+						const m = raw.trim().match(/^([A-Za-z_][\w]*)\s*:\s*([a-z0-9]+)$/);
+						if (!m) {
+							window.alert('Format: name: type (type one of integer, number, boolean, string, vector3, hash, ped, vehicle, entity, blip, player, any)');
+							return;
+						}
+						const name = m[1];
+						const type = m[2] as EditorType;
+						updateDoc((d) => ({
+							...d,
+							variables: [...(d.variables ?? []).filter((v) => v.name !== name), { name, type }],
+						}));
+					}}
+					title="Declare a script-scope variable; appears as get/set entries in the node palette"
+				>+ Variable</button>
+				<button onClick={autoArrange} title="Lay out nodes left-to-right by exec flow">Auto-arrange</button>
+				<button onClick={() => openQuickAddAt(window.innerWidth / 2, window.innerHeight / 2)}>+ Add Node (Space)</button>
 			</div>
 			<div className="canvas">
 				<ReactFlow
@@ -414,6 +534,7 @@ function EditorInner() {
 						flowPos={quickAdd.flow}
 						scope={doc.scope}
 						seed={quickAdd.seed}
+						variables={doc.variables}
 						onPick={insertNode}
 						onCancel={() => setQuickAdd(null)}
 					/>
@@ -471,6 +592,18 @@ function pinKindOf(node: BNode, pinId: string, dir: 'input' | 'output'): { kind:
 		if (dir === 'output' && node.outExec.some((p) => p.id === pinId)) return { kind: 'exec' };
 		const arg = node.argPins.find((p) => p.id === pinId);
 		if (dir === 'input' && arg) return { kind: 'value', type: arg.type };
+	}
+	return null;
+}
+
+function pinNameOf(node: BNode, pinId: string): string | null {
+	if (node.kind === 'exec-call' || node.kind === 'control' || node.kind === 'pure' || node.kind === 'var-set') {
+		const arg = node.argPins.find((p) => p.id === pinId);
+		if (arg) return arg.name;
+	}
+	if (node.kind === 'event') {
+		const out = (node.outValuePins ?? []).find((p) => p.id === pinId);
+		if (out) return out.name;
 	}
 	return null;
 }

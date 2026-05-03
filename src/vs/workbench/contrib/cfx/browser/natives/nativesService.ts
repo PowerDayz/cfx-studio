@@ -78,22 +78,39 @@ class NativesService extends Disposable implements INativesService {
 			}
 			return true;
 		};
-		const out: CfxNativeDef[] = [];
 		if (!trimmed) {
+			const out: CfxNativeDef[] = [];
 			for (const n of this._natives) {
 				if (out.length >= limit) break;
 				if (matchScope(n)) out.push(n);
 			}
 			return out;
 		}
+		// Score every match across all namespaces, then take the top N.
+		// The previous (insertion-order) scan biased the result list to
+		// whichever namespace came first alphabetically — searches like
+		// `nod` returned only CAM hits because CAM filled the budget
+		// before the iterator reached PED / VEHICLE / ENTITY.
+		const scored: { n: CfxNativeDef; score: number }[] = [];
 		for (const n of this._natives) {
-			if (out.length >= limit) break;
 			if (!matchScope(n)) continue;
-			if (n.name.toLowerCase().includes(trimmed) || n.ns.toLowerCase().includes(trimmed)) {
-				out.push(n);
-			}
+			const name = n.name.toLowerCase();
+			const ns = n.ns.toLowerCase();
+			let score = 0;
+			if (name === trimmed) score = 1000;
+			else if (name.startsWith(trimmed)) score = 500;
+			else if (name.includes(`_${trimmed}`)) score = 200;
+			else if (name.includes(trimmed)) score = 100;
+			else if (ns.startsWith(trimmed)) score = 60;
+			else if (ns.includes(trimmed)) score = 30;
+			else if ((n.description ?? '').toLowerCase().includes(trimmed)) score = 10;
+			if (score > 0) scored.push({ n, score });
 		}
-		return out;
+		scored.sort((a, b) => {
+			if (b.score !== a.score) return b.score - a.score;
+			return a.n.name.localeCompare(b.n.name);
+		});
+		return scored.slice(0, limit).map((x) => x.n);
 	}
 
 	private async loadForMode(mode: GameMode): Promise<void> {
