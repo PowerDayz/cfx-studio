@@ -52,19 +52,19 @@ export function parseLogLine(raw: string): LogEvent {
 	const line = stripAnsi(raw).replace(/\r$/, '');
 
 	let m = STARTED_RE.exec(line);
-	if (m) return { raw, resourceName: m[1], kind: 'started' };
+	if (m) { return { raw, resourceName: m[1], kind: 'started' }; }
 
 	m = STOPPED_RE.exec(line);
-	if (m) return { raw, resourceName: m[1], kind: 'stopped' };
+	if (m) { return { raw, resourceName: m[1], kind: 'stopped' }; }
 
 	m = ERROR_RE.exec(line);
-	if (m) return { raw, resourceName: m[1], kind: 'errored' };
+	if (m) { return { raw, resourceName: m[1], kind: 'errored' }; }
 
 	m = SCRIPT_PREFIX_RE.exec(line);
-	if (m) return { raw, resourceName: m[1], kind: 'output' };
+	if (m) { return { raw, resourceName: m[1], kind: 'output' }; }
 
 	m = GENERIC_PREFIX_RE.exec(line);
-	if (m) return { raw, resourceName: m[1], kind: 'output' };
+	if (m) { return { raw, resourceName: m[1], kind: 'output' }; }
 
 	if (SERVER_UP_RE.test(line)) {
 		return { raw, kind: 'serverUp' };

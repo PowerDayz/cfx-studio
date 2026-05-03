@@ -28,8 +28,8 @@ import { IGameModeService } from '../../common/gameMode.js';
 import { INativesService } from '../../common/natives.js';
 import type { HostToWebviewMessage, WebviewToHostMessage } from '../../common/fxgraphMessages.js';
 import { FxGraphEditorInput } from './fxgraphEditorInput.js';
-import { generateLua } from '../../_shared/visual/dist/codegen.js';
-import type { GraphDoc } from '../../_shared/visual/dist/doc.js';
+import { generateLua } from '../../_shared/visual/codegen.js';
+import type { GraphDoc } from '../../_shared/visual/doc.js';
 
 const MEDIA_DIR_REL = 'vs/workbench/contrib/cfx/browser/graph/media/fxgraph';
 
@@ -103,7 +103,7 @@ export class FxGraphEditorPane extends EditorPane {
 		let doc: unknown;
 		try {
 			const content = await this.fileService.readFile(input.resource);
-			if (token.isCancellationRequested) return;
+			if (token.isCancellationRequested) { return; }
 			doc = JSON.parse(content.value.toString());
 		} catch (err) {
 			this.logService.error(`[cfx] failed to read .fxgraph ${input.resource.toString()}`, err);
@@ -119,7 +119,7 @@ export class FxGraphEditorPane extends EditorPane {
 		// Resolve per-resource game mode (walks up to fxmanifest.lua).
 		const folder = input.resource.with({ path: input.resource.path.replace(/\/[^/]+$/, '') });
 		const mode = await this.gameModeService.getResourceMode(folder);
-		if (token.isCancellationRequested) return;
+		if (token.isCancellationRequested) { return; }
 
 		const init: HostToWebviewMessage = { type: 'init', doc, gameMode: mode };
 		if (this.webviewReady) {
@@ -148,7 +148,7 @@ export class FxGraphEditorPane extends EditorPane {
 	}
 
 	override layout(dimension: Dimension): void {
-		if (!this.rootContainer) return;
+		if (!this.rootContainer) { return; }
 		this.rootContainer.style.width = `${dimension.width}px`;
 		this.rootContainer.style.height = `${dimension.height}px`;
 		this.webviewMD.value?.layoutWebviewOverElement(this.rootContainer, dimension);
@@ -168,7 +168,7 @@ export class FxGraphEditorPane extends EditorPane {
 	}
 
 	private ensureWebview(): void {
-		if (this.webviewMD.value || !this.rootContainer) return;
+		if (this.webviewMD.value || !this.rootContainer) { return; }
 
 		const mediaRoot = FileAccess.asFileUri(MEDIA_DIR_REL);
 		const webview = this.webviewService.createWebviewOverlay({
@@ -204,7 +204,7 @@ export class FxGraphEditorPane extends EditorPane {
 	}
 
 	private onWebviewMessage(msg: WebviewToHostMessage): void {
-		if (!msg || typeof msg !== 'object') return;
+		if (!msg || typeof msg !== 'object') { return; }
 		switch (msg.type) {
 			case 'ready':
 				this.webviewReady = true;
@@ -218,7 +218,7 @@ export class FxGraphEditorPane extends EditorPane {
 				// Debounced so a sequence of rapid edits (drag, multi-pin
 				// connect) collapses into one filesystem write.
 				this.pendingSaveDoc = msg.doc;
-				if (this.saveTimer) clearTimeout(this.saveTimer);
+				if (this.saveTimer) { clearTimeout(this.saveTimer); }
 				this.saveTimer = setTimeout(() => {
 					this.saveTimer = undefined;
 					void this.flushSave();
@@ -240,7 +240,7 @@ export class FxGraphEditorPane extends EditorPane {
 		const uri = this.currentResource;
 		const doc = this.pendingSaveDoc;
 		this.pendingSaveDoc = undefined;
-		if (!uri || doc === undefined) return;
+		if (!uri || doc === undefined) { return; }
 		try {
 			// Persist the canonical .fxgraph JSON.
 			const json = JSON.stringify(doc, null, 2) + '\n';
@@ -262,7 +262,7 @@ export class FxGraphEditorPane extends EditorPane {
 	}
 
 	private handleNativeSearch(query: string): void {
-		if (!this.nativesService.isLoaded) return;
+		if (!this.nativesService.isLoaded) { return; }
 		const results = this.nativesService.search(query, 200, this.currentScope).map((n) => ({
 			hash: n.hash,
 			ns: n.ns,

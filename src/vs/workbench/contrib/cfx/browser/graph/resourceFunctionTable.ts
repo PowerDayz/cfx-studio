@@ -46,7 +46,7 @@ export class ResourceFunctionTable extends Disposable {
 
 		this._register(this.fileService.onDidFilesChange((e) => {
 			for (const uri of [...e.rawAdded, ...e.rawUpdated, ...e.rawDeleted]) {
-				if (!uri.path.endsWith('.fxgraph')) continue;
+				if (!uri.path.endsWith('.fxgraph')) { continue; }
 				// Find which tracked resource folder owns this file.
 				for (const folderKey of this.perResource.keys()) {
 					if (uri.path.startsWith(folderKey)) {
@@ -64,7 +64,7 @@ export class ResourceFunctionTable extends Disposable {
 
 	async track(resourceFolder: URI): Promise<void> {
 		const key = resourceFolder.toString();
-		if (this.watchers.has(key)) return;
+		if (this.watchers.has(key)) { return; }
 		this.watchers.set(key, this.fileService.watch(resourceFolder));
 		await this.refreshResource(resourceFolder);
 	}
@@ -79,15 +79,15 @@ export class ResourceFunctionTable extends Disposable {
 		try {
 			const stat = await this.fileService.resolve(resourceFolder, { resolveMetadata: false });
 			for (const child of stat.children ?? []) {
-				if (child.isDirectory) continue;
-				if (!child.name.endsWith('.fxgraph')) continue;
+				if (child.isDirectory) { continue; }
+				if (!child.name.endsWith('.fxgraph')) { continue; }
 				try {
 					const content = await this.fileService.readFile(child.resource);
 					const doc = JSON.parse(content.value.toString()) as { nodes?: Array<{ kind: string;[k: string]: unknown }> };
 					for (const node of doc.nodes ?? []) {
-						if (node.kind !== 'function-def') continue;
+						if (node.kind !== 'function-def') { continue; }
 						const name = String(node.name ?? '').trim();
-						if (!name) continue;
+						if (!name) { continue; }
 						const params = Array.isArray(node.params)
 							? (node.params as Array<{ name?: string; type?: string }>).map((p) => ({
 								name: String(p.name ?? '_'),

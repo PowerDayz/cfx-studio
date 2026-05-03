@@ -40,13 +40,13 @@ class AutoRestartContribution extends Disposable implements IWorkbenchContributi
 		super();
 
 		this._register(fileService.onDidFilesChange((e) => {
-			if (!this.isEnabled()) return;
-			if (this.fxServer.state !== 'running') return;
+			if (!this.isEnabled()) { return; }
+			if (this.fxServer.state !== 'running') { return; }
 			for (const uri of [...e.rawAdded, ...e.rawUpdated]) {
-				if (!isWatchedFile(uri)) continue;
+				if (!isWatchedFile(uri)) { continue; }
 				const resource = this.findOwningResource(uri);
-				if (!resource) continue;
-				if (resource.runtimeState !== 'running') continue;
+				if (!resource) { continue; }
+				if (resource.runtimeState !== 'running') { continue; }
 				this.scheduleRestart(resource.name);
 			}
 		}));
@@ -77,7 +77,7 @@ class AutoRestartContribution extends Disposable implements IWorkbenchContributi
 		const path = uri.path;
 		for (const r of this.discovery.getResources()) {
 			const folderPath = r.folder.path;
-			if (path === folderPath) continue;
+			if (path === folderPath) { continue; }
 			if (path.startsWith(folderPath + '/')) {
 				return r;
 			}
@@ -86,7 +86,7 @@ class AutoRestartContribution extends Disposable implements IWorkbenchContributi
 	}
 
 	override dispose(): void {
-		for (const h of this.pending.values()) clearTimeout(h);
+		for (const h of this.pending.values()) { clearTimeout(h); }
 		this.pending.clear();
 		super.dispose();
 	}

@@ -6,10 +6,9 @@
 import { localize, localize2 } from '../../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
-import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { ConfigurationTarget, IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { IFileDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
-import { ConfigurationTarget } from '../../../../../platform/configuration/common/configuration.js';
 import { GameMode, IGameModeService } from '../../common/gameMode.js';
 import { IResourceDiscoveryService } from '../../common/resources.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
@@ -40,7 +39,7 @@ class LocateFXServerExeAction extends Action2 {
 			canSelectMany: false,
 			filters: [{ name: 'FXServer', extensions: ['exe'] }],
 		});
-		if (!picked || picked.length === 0) return;
+		if (!picked || picked.length === 0) { return; }
 		const path = picked[0].fsPath;
 		await config.updateValue('cfx.fxserver.path', path, ConfigurationTarget.USER);
 		notification.info(localize('cfx.server.locateExe.set', 'FXServer path set to {0}', path));

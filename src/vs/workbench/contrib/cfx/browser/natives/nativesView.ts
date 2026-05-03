@@ -106,7 +106,7 @@ export class NativesViewPane extends ViewPane {
 	}
 
 	private refresh(): void {
-		if (!this.resultList || !this.statusLine || !this.searchInput) return;
+		if (!this.resultList || !this.statusLine || !this.searchInput) { return; }
 		const query = this.searchInput.value;
 		const results = this.nativesService.search(query, SEARCH_RESULT_LIMIT);
 		const total = this.nativesService.getAll().length;
@@ -153,7 +153,7 @@ function composeNativeTooltip(n: CfxNativeDef): string {
 	lines.push(sig);
 	lines.push(`Namespace: ${n.ns}`);
 	lines.push(`Hash: ${n.hash}`);
-	if (n.apiset) lines.push(`API set: ${n.apiset}`);
+	if (n.apiset) { lines.push(`API set: ${n.apiset}`); }
 	if (n.description) {
 		lines.push('');
 		lines.push(n.description.length > 400 ? n.description.slice(0, 400) + '…' : n.description);

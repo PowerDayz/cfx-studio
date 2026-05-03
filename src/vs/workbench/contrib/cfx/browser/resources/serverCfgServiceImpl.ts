@@ -21,7 +21,7 @@ import {
 	collectAllEnsures,
 	findExecChain,
 	type ServerCfgDoc,
-} from '../../_shared/server-cfg/dist/index.js';
+} from '../../_shared/server-cfg/index.js';
 
 /**
  * Workbench-side server.cfg orchestrator. Reads cfg files via IFileService,
@@ -55,26 +55,26 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 
 	getRootCfgUri(): URI | undefined {
 		const folder = this.workspaceService.getWorkspace().folders[0];
-		if (!folder) return undefined;
+		if (!folder) { return undefined; }
 		return joinPath(folder.uri, 'server.cfg');
 	}
 
 	async getEnsuredResourceNames(): Promise<Set<string>> {
 		const root = await this.readRootDoc();
-		if (!root) return new Set();
+		if (!root) { return new Set(); }
 		const result = await collectAllEnsures(
 			root,
 			(p) => this.readPath(p),
 			(cfg, rel) => this.resolveRelative(cfg, rel),
 		);
 		// Treat `start <name>` the same as `ensure <name>` for display purposes.
-		for (const s of result.starts) result.ensures.add(s);
+		for (const s of result.starts) { result.ensures.add(s); }
 		return result.ensures;
 	}
 
 	async getEnsureChainOrdered(): Promise<string[]> {
 		const root = await this.readRootDoc();
-		if (!root) return [];
+		if (!root) { return []; }
 		const ordered: string[] = [];
 		const seen = new Set<string>();
 		const chain = await findExecChain(
@@ -85,7 +85,7 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 
 		for (const cfgPath of chain) {
 			const text = await this.readPath(cfgPath);
-			if (text == null) continue;
+			if (text === null || text === undefined) { continue; }
 			const doc = parseServerCfg(text, cfgPath);
 			for (const line of doc.lines) {
 				if (line.cmd?.kind === 'ensure' && !seen.has(line.cmd.name)) {
@@ -99,18 +99,18 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 
 	async addEnsure(name: string): Promise<void> {
 		const root = await this.readRootDoc();
-		if (!root) return;
+		if (!root) { return; }
 		const target = await this.pickEnsureTarget(root);
 		const doc = await this.readDoc(target);
-		if (!doc) return;
-		if (doc.ensures.has(name)) return;
+		if (!doc) { return; }
+		if (doc.ensures.has(name)) { return; }
 		const next = editEnsure(doc, name, true);
 		await this.writeDoc(target, next);
 	}
 
 	async removeEnsure(name: string): Promise<void> {
 		const root = await this.readRootDoc();
-		if (!root) return;
+		if (!root) { return; }
 		const chain = await findExecChain(
 			root,
 			(p) => this.readPath(p),
@@ -118,9 +118,9 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 		);
 		for (const cfgPath of chain) {
 			const text = await this.readPath(cfgPath);
-			if (text == null) continue;
+			if (text === null || text === undefined) { continue; }
 			const doc = parseServerCfg(text, cfgPath);
-			if (!doc.ensures.has(name)) continue;
+			if (!doc.ensures.has(name)) { continue; }
 			const next = editEnsure(doc, name, false);
 			await this.writeDoc(cfgPath, next);
 		}
@@ -128,7 +128,7 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 
 	async reorderEnsures(orderedNames: string[]): Promise<void> {
 		const root = await this.readRootDoc();
-		if (!root) return;
+		if (!root) { return; }
 		const next = editEnsureOrder(root, orderedNames);
 		await this.writeDoc(root.path, next);
 	}
@@ -147,7 +147,7 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 	private rebuildWatchers(): void {
 		this._watchers.clear();
 		const root = this.getRootCfgUri();
-		if (!root) return;
+		if (!root) { return; }
 		this._watchers.add(this.fileService.watch(root));
 		this._watchers.add(this.fileService.onDidFilesChange((e) => {
 			// Conservative: any file change in the workspace might be a
@@ -161,13 +161,13 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 
 	private async readRootDoc(): Promise<ServerCfgDoc | null> {
 		const root = this.getRootCfgUri();
-		if (!root) return null;
+		if (!root) { return null; }
 		return this.readDoc(root.toString());
 	}
 
 	private async readDoc(pathStr: string): Promise<ServerCfgDoc | null> {
 		const text = await this.readPath(pathStr);
-		if (text == null) return null;
+		if (text === null || text === undefined) { return null; }
 		return parseServerCfg(text, pathStr);
 	}
 

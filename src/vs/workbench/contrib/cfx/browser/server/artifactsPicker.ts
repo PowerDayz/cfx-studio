@@ -71,9 +71,9 @@ export async function runArtifactDownload(instantiationService: IInstantiationSe
 	const pick = await quickInput.pick(items, {
 		placeHolder: localize('cfx.artifacts.pick', 'Pick a FXServer build to download'),
 	});
-	if (!pick) return undefined;
+	if (!pick) { return undefined; }
 	const build = builds.find((b) => b.id === pick.id);
-	if (!build) return undefined;
+	if (!build) { return undefined; }
 
 	const downloadToken = new CancellationTokenSource();
 	try {

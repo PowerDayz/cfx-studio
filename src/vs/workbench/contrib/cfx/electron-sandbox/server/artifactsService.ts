@@ -44,7 +44,7 @@ class ArtifactsService extends Disposable implements IArtifactsService {
 	async listBuilds(token: CancellationToken): Promise<BuildEntry[]> {
 		const ctx = await this.requestService.request({ url: FXSERVER_ARTIFACTS_BASE, type: 'GET' }, token);
 		const html = await asText(ctx);
-		if (!html) return [];
+		if (!html) { return []; }
 
 		// The directory listing has anchors like `<a href="12345-abc1234/">12345-abc1234/</a>`.
 		// Extract every "<digits>-<hex>" build id.

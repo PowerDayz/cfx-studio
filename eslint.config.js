@@ -1050,6 +1050,9 @@ export default tseslint.config(
 						'vs/workbench/~',
 						'vs/workbench/services/*/~',
 						'vs/workbench/contrib/*/~',
+						// Cfx Studio's contrib reads from _shared/ (the
+						// in-fork vendored shared TypeScript libs).
+						'vs/workbench/contrib/cfx/_shared/**/*',
 						'vs/workbench/contrib/terminal/terminalContribChatExports*',
 						'vs/workbench/contrib/terminal/terminalContribExports*',
 						'vscode-notebook-renderer', // Type only import
@@ -1066,6 +1069,16 @@ export default tseslint.config(
 							'when': 'hasBrowser',
 							'pattern': 'vscode-textmate'
 						} // node module allowed even in /browser/
+					]
+				},
+				{
+					// Cfx Studio's first-party shared libs (codegen, natives,
+					// server-cfg) live under _shared/ and only import from
+					// each other via relative paths. They have no VSCode
+					// dependencies — the layer rule reflects that.
+					'target': 'src/vs/workbench/contrib/cfx/_shared/**',
+					'restrictions': [
+						'vs/workbench/contrib/cfx/_shared/**/*'
 					]
 				},
 				{

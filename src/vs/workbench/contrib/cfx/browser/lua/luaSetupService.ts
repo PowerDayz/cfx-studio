@@ -55,7 +55,7 @@ class LuaSetupContribution extends Disposable implements IWorkbenchContribution 
 
 	private async regenerate(): Promise<void> {
 		const folder = this.workspaceService.getWorkspace().folders[0];
-		if (!folder) return;
+		if (!folder) { return; }
 		try {
 			await this.writeLuarc(folder.uri);
 			await this.writeNatives(folder.uri, this.gameModeService.getWorkspaceMode());

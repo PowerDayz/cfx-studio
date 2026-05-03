@@ -117,7 +117,7 @@ export async function emitNativesLua(
 }
 
 function emitNativeStub(out: string[], native: NativeDef): void {
-	if (!isValidLuaName(native.name)) return;
+	if (!isValidLuaName(native.name)) { return; }
 
 	if (native.description) {
 		const desc = native.description.split('\n').slice(0, 6); // cap; some descs are long
@@ -126,8 +126,8 @@ function emitNativeStub(out: string[], native: NativeDef): void {
 		}
 	}
 	out.push(`--- Hash: \`${native.hash}\``);
-	if (native.ns) out.push(`--- Namespace: \`${native.ns}\``);
-	if (native.apiset) out.push(`--- API set: \`${native.apiset}\``);
+	if (native.ns) { out.push(`--- Namespace: \`${native.ns}\``); }
+	if (native.apiset) { out.push(`--- API set: \`${native.apiset}\``); }
 
 	const luaParams: string[] = [];
 	for (const p of native.params) {
@@ -158,8 +158,8 @@ const LUA_RESERVED = new Set([
 
 function sanitizeParamName(raw: string): string {
 	let name = (raw ?? '').replace(/[^A-Za-z0-9_]/g, '_');
-	if (!name || /^\d/.test(name)) name = `arg_${name || 'x'}`;
-	if (LUA_RESERVED.has(name)) name = `${name}_`;
+	if (!name || /^\d/.test(name)) { name = `arg_${name || 'x'}`; }
+	if (LUA_RESERVED.has(name)) { name = `${name}_`; }
 	return name;
 }
 

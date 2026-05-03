@@ -67,7 +67,7 @@ export class CfxNodeService extends Disposable implements ICfxNodeService {
 
 	async writeFxServerStdin(spawnId: string, data: string): Promise<void> {
 		const proc = this.procs.get(spawnId);
-		if (!proc) return;
+		if (!proc) { return; }
 		try {
 			proc.stdin?.write(data);
 		} catch {
@@ -77,7 +77,7 @@ export class CfxNodeService extends Disposable implements ICfxNodeService {
 
 	async killFxServer(spawnId: string): Promise<void> {
 		const proc = this.procs.get(spawnId);
-		if (!proc) return;
+		if (!proc) { return; }
 		try {
 			proc.stdin?.write('quit\n');
 		} catch { /* */ }

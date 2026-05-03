@@ -61,14 +61,14 @@ class ConsoleService extends Disposable implements IConsoleService {
 	}
 
 	setFocusedResource(name: string | null): void {
-		if (this.focusedResource === name) return;
+		if (this.focusedResource === name) { return; }
 		this.focusedResource = name;
 		this._onDidChangeFocusedResource.fire(name);
 	}
 
 	private consume(chunk: string, stream: 'stdout' | 'stderr'): void {
 		const split = splitChunk(chunk, stream === 'stdout' ? this.stdoutTail : this.stderrTail);
-		if (stream === 'stdout') this.stdoutTail = split.tail; else this.stderrTail = split.tail;
+		if (stream === 'stdout') { this.stdoutTail = split.tail; } else { this.stderrTail = split.tail; }
 
 		for (const raw of split.lines) {
 			this.appendTo(ALL_OUTPUT_SCOPE, raw);

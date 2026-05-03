@@ -197,7 +197,7 @@ export class ResourcesViewPane extends ViewPane {
 		// target are both resource names; drop position (before/after) is
 		// inferred from the cursor's vertical position within the target row.
 		this._register(dom.addDisposableListener(row, dom.EventType.DRAG_START, (e: DragEvent) => {
-			if (!e.dataTransfer) return;
+			if (!e.dataTransfer) { return; }
 			e.dataTransfer.setData('application/x-cfx-resource', resource.name);
 			e.dataTransfer.effectAllowed = 'move';
 			row.style.opacity = '0.5';
@@ -208,9 +208,9 @@ export class ResourcesViewPane extends ViewPane {
 			row.style.borderBottom = '';
 		}));
 		this._register(dom.addDisposableListener(row, dom.EventType.DRAG_OVER, (e: DragEvent) => {
-			if (!e.dataTransfer) return;
+			if (!e.dataTransfer) { return; }
 			const src = e.dataTransfer.types.includes('application/x-cfx-resource');
-			if (!src) return;
+			if (!src) { return; }
 			e.preventDefault();
 			e.dataTransfer.dropEffect = 'move';
 			const rect = row.getBoundingClientRect();
@@ -226,7 +226,7 @@ export class ResourcesViewPane extends ViewPane {
 			row.style.borderTop = '';
 			row.style.borderBottom = '';
 			const sourceName = e.dataTransfer?.getData('application/x-cfx-resource');
-			if (!sourceName || sourceName === resource.name) return;
+			if (!sourceName || sourceName === resource.name) { return; }
 			e.preventDefault();
 			const rect = row.getBoundingClientRect();
 			const before = e.clientY < rect.top + rect.height / 2;
@@ -250,7 +250,7 @@ export class ResourcesViewPane extends ViewPane {
 					const children = (stat.children ?? [])
 						.filter((c) => !c.name.startsWith('.'))
 						.sort((a, b) => {
-							if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+							if (a.isDirectory !== b.isDirectory) { return a.isDirectory ? -1 : 1; }
 							return a.name.localeCompare(b.name);
 						})
 						.map((c) => c.resource);
@@ -389,7 +389,7 @@ export class ResourcesViewPane extends ViewPane {
 		}
 
 		for (const candidate of ['client.lua', 'client.ts', 'client.js', 'server.lua', 'server.ts', 'server.js']) {
-			if (childNames.has(candidate)) return joinPath(resource.folder, candidate);
+			if (childNames.has(candidate)) { return joinPath(resource.folder, candidate); }
 		}
 
 		return manifestUri;
@@ -508,10 +508,10 @@ function firstScriptEntry(manifestText: string, side: 'client' | 'server'): stri
 	const blockMatch = blockRe.exec(manifestText);
 	if (blockMatch) {
 		const innerMatch = /['"]([^'"\n]+)['"]/.exec(blockMatch[1]);
-		if (innerMatch) return innerMatch[1].trim();
+		if (innerMatch) { return innerMatch[1].trim(); }
 	}
 	const singleRe = new RegExp(`(?:^|\\n)\\s*${side}_scripts?\\s+['"]([^'"\\n]+)['"]`, 'i');
 	const singleMatch = singleRe.exec(manifestText);
-	if (singleMatch) return singleMatch[1].trim();
+	if (singleMatch) { return singleMatch[1].trim(); }
 	return undefined;
 }

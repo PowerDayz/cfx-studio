@@ -19,7 +19,7 @@ import { IConsoleService } from '../../common/console.js';
  */
 
 CommandsRegistry.registerCommand('cfx.console.focusResource', (accessor: ServicesAccessor, name?: string) => {
-	if (typeof name !== 'string' || !name) return;
+	if (typeof name !== 'string' || !name) { return; }
 	accessor.get(IConsoleService).setFocusedResource(name);
 });
 

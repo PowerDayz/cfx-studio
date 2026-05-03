@@ -3,6 +3,7 @@
  *  Licensed under the MIT License.
  *--------------------------------------------------------------------------------------------*/
 
+import { mainWindow } from '../../../../../base/browser/window.js';
 import { Disposable, IDisposable } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -81,7 +82,7 @@ class CfxStatusBarContribution extends Disposable implements IWorkbenchContribut
 	private resourceEntry?: IStatusbarEntryAccessor;
 
 	private startedAt: number | undefined;
-	private uptimeTimer: ReturnType<typeof setInterval> | undefined;
+	private uptimeTimer: ReturnType<typeof mainWindow.setInterval> | undefined;
 
 	private currentResource = '';
 	private resourceLookupGen = 0;
@@ -110,7 +111,7 @@ class CfxStatusBarContribution extends Disposable implements IWorkbenchContribut
 		this._register({
 			dispose: () => {
 				if (this.uptimeTimer) {
-					clearInterval(this.uptimeTimer);
+					mainWindow.clearInterval(this.uptimeTimer);
 					this.uptimeTimer = undefined;
 				}
 			},
@@ -190,12 +191,12 @@ class CfxStatusBarContribution extends Disposable implements IWorkbenchContribut
 	private startUptime(): void {
 		this.startedAt = Date.now();
 		this.installUptimeEntry();
-		this.uptimeTimer = setInterval(() => this.refreshUptime(), 1000);
+		this.uptimeTimer = mainWindow.setInterval(() => this.refreshUptime(), 1000);
 	}
 
 	private stopUptime(): void {
 		if (this.uptimeTimer) {
-			clearInterval(this.uptimeTimer);
+			mainWindow.clearInterval(this.uptimeTimer);
 			this.uptimeTimer = undefined;
 		}
 		this.startedAt = undefined;
@@ -204,7 +205,7 @@ class CfxStatusBarContribution extends Disposable implements IWorkbenchContribut
 	}
 
 	private installUptimeEntry(): void {
-		if (this.uptimeEntry) return;
+		if (this.uptimeEntry) { return; }
 		this.uptimeEntry = this.statusbarService.addEntry(
 			this.uptimeEntryFor(),
 			ENTRY_UPTIME_ID,
@@ -235,8 +236,8 @@ class CfxStatusBarContribution extends Disposable implements IWorkbenchContribut
 		const gen = ++this.resourceLookupGen;
 		const uri = this.editorService.activeEditor?.resource;
 		const name = uri ? await this.lookupResource(uri) : '';
-		if (gen !== this.resourceLookupGen) return;
-		if (name === this.currentResource) return;
+		if (gen !== this.resourceLookupGen) { return; }
+		if (name === this.currentResource) { return; }
 		this.currentResource = name;
 		this.serverEntry?.update(this.serverEntryFor(this.fxServer.state));
 		this.applyResourceEntry();

@@ -66,7 +66,7 @@ export class ConsoleViewPane extends ViewPane {
 			this.refreshTabs();
 			// Auto-switch to the focused resource tab if one was just opened.
 			const focused = this.consoleService.getFocusedResource();
-			if (focused) this.setActive(focused); else this.setActive(ALL_OUTPUT_SCOPE);
+			if (focused) { this.setActive(focused); } else { this.setActive(ALL_OUTPUT_SCOPE); }
 		}));
 	}
 
@@ -110,7 +110,7 @@ export class ConsoleViewPane extends ViewPane {
 	}
 
 	private refreshTabs(): void {
-		if (!this.tabsContainer) return;
+		if (!this.tabsContainer) { return; }
 		dom.clearNode(this.tabsContainer);
 		this.appendTab(ALL_OUTPUT_SCOPE, 'All output');
 		const focused = this.consoleService.getFocusedResource();
@@ -132,14 +132,14 @@ export class ConsoleViewPane extends ViewPane {
 	}
 
 	private setActive(scope: ConsoleScope): void {
-		if (this.currentScope === scope) return;
+		if (this.currentScope === scope) { return; }
 		this.currentScope = scope;
 		this.refreshTabs();
 		this.refreshLog();
 	}
 
 	private refreshLog(): void {
-		if (!this.logContainer || !this.logScrollable) return;
+		if (!this.logContainer || !this.logScrollable) { return; }
 		const lines = this.consoleService.getLines(this.currentScope);
 		const wasNearBottom = this.isScrolledNearBottom();
 
@@ -159,7 +159,7 @@ export class ConsoleViewPane extends ViewPane {
 	}
 
 	private isScrolledNearBottom(): boolean {
-		if (!this.logScrollable) return true;
+		if (!this.logScrollable) { return true; }
 		const pos = this.logScrollable.getScrollPosition();
 		const dim = this.logScrollable.getScrollDimensions();
 		return pos.scrollTop + dim.height >= dim.scrollHeight - 32;

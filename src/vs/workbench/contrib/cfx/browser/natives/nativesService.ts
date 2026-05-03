@@ -42,7 +42,7 @@ class NativesService extends Disposable implements INativesService {
 		void this.loadForMode(this._mode);
 
 		this._register(gameModeService.onDidChangeMode((mode) => {
-			if (mode === this._mode) return;
+			if (mode === this._mode) { return; }
 			this._mode = mode;
 			void this.loadForMode(mode);
 			this._onDidChangeMode.fire(mode);
@@ -68,7 +68,7 @@ class NativesService extends Disposable implements INativesService {
 	search(query: string, limit: number, scope?: 'client' | 'server' | 'shared'): ReadonlyArray<CfxNativeDef> {
 		const trimmed = query.trim().toLowerCase();
 		const matchScope = (n: CfxNativeDef): boolean => {
-			if (!scope || scope === 'shared') return true;
+			if (!scope || scope === 'shared') { return true; }
 			const apiset = (n.apiset ?? '').toLowerCase();
 			// `apiset` values commonly seen: 'client', 'server', 'shared'.
 			// Anything else (including missing) passes through; better to
@@ -81,8 +81,8 @@ class NativesService extends Disposable implements INativesService {
 		if (!trimmed) {
 			const out: CfxNativeDef[] = [];
 			for (const n of this._natives) {
-				if (out.length >= limit) break;
-				if (matchScope(n)) out.push(n);
+				if (out.length >= limit) { break; }
+				if (matchScope(n)) { out.push(n); }
 			}
 			return out;
 		}
@@ -98,22 +98,22 @@ class NativesService extends Disposable implements INativesService {
 		const normQuery = trimmed.replace(/_/g, '');
 		const scored: { n: CfxNativeDef; score: number }[] = [];
 		for (const n of this._natives) {
-			if (!matchScope(n)) continue;
+			if (!matchScope(n)) { continue; }
 			const name = n.name.toLowerCase();
 			const nameNoUs = name.replace(/_/g, '');
 			const ns = n.ns.toLowerCase();
 			let score = 0;
-			if (name === trimmed || nameNoUs === normQuery) score = 1000;
-			else if (name.startsWith(trimmed) || nameNoUs.startsWith(normQuery)) score = 500;
-			else if (name.includes(`_${trimmed}`)) score = 200;
-			else if (name.includes(trimmed) || nameNoUs.includes(normQuery)) score = 100;
-			else if (ns.startsWith(trimmed)) score = 60;
-			else if (ns.includes(trimmed)) score = 30;
-			else if ((n.description ?? '').toLowerCase().includes(trimmed)) score = 10;
-			if (score > 0) scored.push({ n, score });
+			if (name === trimmed || nameNoUs === normQuery) { score = 1000; }
+			else if (name.startsWith(trimmed) || nameNoUs.startsWith(normQuery)) { score = 500; }
+			else if (name.includes(`_${trimmed}`)) { score = 200; }
+			else if (name.includes(trimmed) || nameNoUs.includes(normQuery)) { score = 100; }
+			else if (ns.startsWith(trimmed)) { score = 60; }
+			else if (ns.includes(trimmed)) { score = 30; }
+			else if ((n.description ?? '').toLowerCase().includes(trimmed)) { score = 10; }
+			if (score > 0) { scored.push({ n, score }); }
 		}
 		scored.sort((a, b) => {
-			if (b.score !== a.score) return b.score - a.score;
+			if (b.score !== a.score) { return b.score - a.score; }
 			return a.n.name.localeCompare(b.n.name);
 		});
 		return scored.slice(0, limit).map((x) => x.n);

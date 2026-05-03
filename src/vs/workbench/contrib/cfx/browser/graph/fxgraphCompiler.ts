@@ -12,8 +12,8 @@ import { ServicesAccessor } from '../../../../../platform/instantiation/common/i
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
-import { generateLua } from '../../_shared/visual/dist/codegen.js';
-import type { GraphDoc } from '../../_shared/visual/dist/doc.js';
+import { generateLua } from '../../_shared/visual/codegen.js';
+import type { GraphDoc } from '../../_shared/visual/doc.js';
 
 /**
  * Compile a .fxgraph file to its sibling .lua. Walks up to find the
@@ -83,13 +83,13 @@ export async function findResourceFolder(fileService: IFileService, fileUri: URI
 		const manifest = joinPath(current, 'fxmanifest.lua');
 		const legacy = joinPath(current, '__resource.lua');
 		try {
-			if (await fileService.exists(manifest)) return current;
-			if (await fileService.exists(legacy)) return current;
+			if (await fileService.exists(manifest)) { return current; }
+			if (await fileService.exists(legacy)) { return current; }
 		} catch {
 			// keep walking
 		}
 		const next = dirname(current);
-		if (next.toString() === current.toString()) break;
+		if (next.toString() === current.toString()) { break; }
 		current = next;
 	}
 	return undefined;

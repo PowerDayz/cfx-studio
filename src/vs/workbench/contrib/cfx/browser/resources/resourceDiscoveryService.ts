@@ -96,7 +96,7 @@ class ResourceDiscoveryService extends Disposable implements IResourceDiscoveryS
 
 	getResourceByName(name: string): IResourceModel | undefined {
 		const entry = this._entries.get(name);
-		if (!entry) return undefined;
+		if (!entry) { return undefined; }
 		return {
 			folder: entry.folder,
 			name: entry.name,
@@ -125,8 +125,8 @@ class ResourceDiscoveryService extends Disposable implements IResourceDiscoveryS
 
 	setRuntimeState(name: string, state: RuntimeState): void {
 		const entry = this._entries.get(name);
-		if (!entry) return;
-		if (entry.runtimeState === state) return;
+		if (!entry) { return; }
+		if (entry.runtimeState === state) { return; }
 		entry.runtimeState = state;
 		this._onDidChangeResources.fire();
 	}
@@ -165,7 +165,7 @@ class ResourceDiscoveryService extends Disposable implements IResourceDiscoveryS
 				}
 			}
 			this._entries.clear();
-			for (const [k, v] of found) this._entries.set(k, v);
+			for (const [k, v] of found) { this._entries.set(k, v); }
 			this._onDidChangeResources.fire();
 		} else {
 			// Even if the set didn't change, the ensure set might have.
@@ -179,18 +179,18 @@ class ResourceDiscoveryService extends Disposable implements IResourceDiscoveryS
 	}
 
 	private isSameSet(a: Map<string, DiscoveredEntry>, b: Map<string, DiscoveredEntry>): boolean {
-		if (a.size !== b.size) return false;
+		if (a.size !== b.size) { return false; }
 		for (const [k, v] of a) {
 			const o = b.get(k);
-			if (!o) return false;
-			if (o.manifestKind !== v.manifestKind) return false;
-			if (o.folder.toString() !== v.folder.toString()) return false;
+			if (!o) { return false; }
+			if (o.manifestKind !== v.manifestKind) { return false; }
+			if (o.folder.toString() !== v.folder.toString()) { return false; }
 		}
 		return true;
 	}
 
 	private async scan(folder: URI, depth: number, out: Map<string, DiscoveredEntry>): Promise<void> {
-		if (depth > MAX_SCAN_DEPTH) return;
+		if (depth > MAX_SCAN_DEPTH) { return; }
 
 		let stat;
 		try {
@@ -198,7 +198,7 @@ class ResourceDiscoveryService extends Disposable implements IResourceDiscoveryS
 		} catch {
 			return;
 		}
-		if (!stat.isDirectory || !stat.children) return;
+		if (!stat.isDirectory || !stat.children) { return; }
 
 		// Check if THIS folder is a resource (has a manifest file).
 		const childMap = new Map<string, FileType>();
@@ -223,9 +223,9 @@ class ResourceDiscoveryService extends Disposable implements IResourceDiscoveryS
 
 		// Recurse into subdirectories that aren't excluded.
 		for (const child of stat.children) {
-			if (!child.isDirectory) continue;
-			if (EXCLUDED_DIR_NAMES.has(child.name)) continue;
-			if (child.name.startsWith('.')) continue;
+			if (!child.isDirectory) { continue; }
+			if (EXCLUDED_DIR_NAMES.has(child.name)) { continue; }
+			if (child.name.startsWith('.')) { continue; }
 			await this.scan(child.resource, depth + 1, out);
 		}
 	}

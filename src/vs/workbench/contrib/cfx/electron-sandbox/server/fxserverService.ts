@@ -53,12 +53,12 @@ class FXServerService extends Disposable implements IFXServerService {
 		super();
 
 		this._register(this.cfxNodeService.onFxServerOutput((e) => {
-			if (e.spawnId !== this.currentSpawnId) return;
+			if (e.spawnId !== this.currentSpawnId) { return; }
 			this._onStdout.fire({ chunk: e.chunk, stream: e.stream });
 			this.consumeStream(e.chunk, e.stream);
 		}));
 		this._register(this.cfxNodeService.onFxServerExit((e) => {
-			if (e.spawnId !== this.currentSpawnId) return;
+			if (e.spawnId !== this.currentSpawnId) { return; }
 			this.logService.info(`[cfx] FXServer exited code=${e.code} signal=${e.signal}`);
 			this.currentSpawnId = undefined;
 			if (this._state !== 'errored') {
@@ -120,7 +120,7 @@ class FXServerService extends Disposable implements IFXServerService {
 	}
 
 	async restart(): Promise<void> {
-		if (!this.currentSpawnId || this._state !== 'running') return;
+		if (!this.currentSpawnId || this._state !== 'running') { return; }
 		try {
 			await this.cfxNodeService.writeFxServerStdin(this.currentSpawnId, 'restart\n');
 		} catch (err) {
@@ -129,7 +129,7 @@ class FXServerService extends Disposable implements IFXServerService {
 	}
 
 	async restartResource(name: string): Promise<void> {
-		if (!this.currentSpawnId || this._state !== 'running') return;
+		if (!this.currentSpawnId || this._state !== 'running') { return; }
 		try {
 			await this.cfxNodeService.writeFxServerStdin(this.currentSpawnId, `restart ${name}\n`);
 		} catch (err) {
@@ -138,14 +138,14 @@ class FXServerService extends Disposable implements IFXServerService {
 	}
 
 	private transition(next: FXServerState): void {
-		if (this._state === next) return;
+		if (this._state === next) { return; }
 		this._state = next;
 		this._onDidChangeState.fire(next);
 	}
 
 	private consumeStream(chunk: string, stream: 'stdout' | 'stderr'): void {
 		const split = splitChunk(chunk, stream === 'stdout' ? this._stdoutTail : this._stderrTail);
-		if (stream === 'stdout') this._stdoutTail = split.tail; else this._stderrTail = split.tail;
+		if (stream === 'stdout') { this._stdoutTail = split.tail; } else { this._stderrTail = split.tail; }
 		for (const raw of split.lines) {
 			const evt = parseLogLine(raw);
 			switch (evt.kind) {

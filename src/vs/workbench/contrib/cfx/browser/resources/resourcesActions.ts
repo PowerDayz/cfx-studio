@@ -46,7 +46,7 @@ class RenameResourceAction extends Action2 {
 		const notification = accessor.get(INotificationService);
 
 		const oldName = currentName ?? await pickResourceName(quickInput, discovery);
-		if (!oldName) return;
+		if (!oldName) { return; }
 
 		const resource = discovery.getResourceByName(oldName);
 		if (!resource) {
@@ -59,7 +59,7 @@ class RenameResourceAction extends Action2 {
 			value: oldName,
 			validateInput: async (value) => validateResourceName(value, oldName, discovery),
 		});
-		if (!newName || newName === oldName) return;
+		if (!newName || newName === oldName) { return; }
 
 		const newFolder = joinPath(dirname(resource.folder), newName);
 		try {
@@ -99,7 +99,7 @@ class DeleteResourceAction extends Action2 {
 		const notification = accessor.get(INotificationService);
 
 		const name = currentName ?? await pickResourceName(quickInput, discovery);
-		if (!name) return;
+		if (!name) { return; }
 
 		const resource = discovery.getResourceByName(name);
 		if (!resource) {
@@ -113,7 +113,7 @@ class DeleteResourceAction extends Action2 {
 			detail: localize('cfx.delete.confirm.detail', 'This permanently deletes the resource folder and removes its ensure entry from server.cfg. This action cannot be undone.'),
 			primaryButton: localize('cfx.delete.confirm.button', 'Delete'),
 		});
-		if (!confirmed.confirmed) return;
+		if (!confirmed.confirmed) { return; }
 
 		try {
 			await cfgService.removeEnsure(name);
@@ -161,7 +161,7 @@ async function pickResourceName(
 	discovery: IResourceDiscoveryService,
 ): Promise<string | undefined> {
 	const items = discovery.getResources().map((r) => ({ label: r.name, description: r.manifestKind === '__resource' ? '__resource.lua' : 'fxmanifest.lua' }));
-	if (items.length === 0) return undefined;
+	if (items.length === 0) { return undefined; }
 	const pick = await quickInput.pick(items, { placeHolder: localize('cfx.resourcePicker.placeholder', 'Pick a resource') });
 	return pick?.label;
 }
@@ -171,11 +171,11 @@ async function validateResourceName(
 	previous: string,
 	discovery: IResourceDiscoveryService,
 ): Promise<string | null> {
-	if (!value) return localize('cfx.name.empty', 'Name cannot be empty.');
+	if (!value) { return localize('cfx.name.empty', 'Name cannot be empty.'); }
 	if (!/^[a-z0-9][a-z0-9_-]*$/i.test(value)) {
 		return localize('cfx.name.pattern', 'Use letters, digits, underscores, or hyphens only; must not start with a separator.');
 	}
-	if (value === previous) return null;
+	if (value === previous) { return null; }
 	if (discovery.getResourceByName(value)) {
 		return localize('cfx.name.exists', 'A resource with that name already exists.');
 	}

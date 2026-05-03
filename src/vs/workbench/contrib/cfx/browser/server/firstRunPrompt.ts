@@ -22,7 +22,7 @@ import { runArtifactDownload } from './artifactsPicker.js';
  */
 export async function resolveFxServerPath(instantiationService: IInstantiationService): Promise<string | undefined> {
 	const existing = instantiationService.invokeFunction((acc) => acc.get(IConfigurationService).getValue<string>('cfx.fxserver.path'));
-	if (existing) return existing;
+	if (existing) { return existing; }
 
 	const pick = await instantiationService.invokeFunction(async (acc) => {
 		const quickInput = acc.get(IQuickInputService);
@@ -34,7 +34,7 @@ export async function resolveFxServerPath(instantiationService: IInstantiationSe
 			{ placeHolder: localize('cfx.firstRun.placeholder', 'FXServer is not configured. Pick how to set it up.') },
 		);
 	});
-	if (!pick) return undefined;
+	if (!pick) { return undefined; }
 
 	if (pick.id === 'locate') {
 		return locateExe(instantiationService);
@@ -50,7 +50,7 @@ async function locateExe(instantiationService: IInstantiationService): Promise<s
 		canSelectMany: false,
 		filters: [{ name: 'FXServer', extensions: ['exe'] }],
 	}));
-	if (!picked || picked.length === 0) return undefined;
+	if (!picked || picked.length === 0) { return undefined; }
 	const path = picked[0].fsPath;
 	await instantiationService.invokeFunction((acc) => acc.get(IConfigurationService).updateValue('cfx.fxserver.path', path, ConfigurationTarget.USER));
 	instantiationService.invokeFunction((acc) => acc.get(INotificationService).info(localize('cfx.firstRun.locate.set', 'Cfx: FXServer path set to {0}', path)));

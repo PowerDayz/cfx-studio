@@ -23,12 +23,12 @@ product.overrides.json
 .vscode-test
 
 # --- Cfx Studio build artifacts ---------------------------------------
-# Output of `inject-shared.mjs` — copies of shared/ workspace dist files
-# pulled into the contrib tree at build time. Source of truth lives in
-# the sibling shared/ workspaces.
-src/vs/workbench/contrib/cfx/_shared/
-# Output of `build-fxgraph-webview.mjs` — Vite bundle for the .fxgraph
-# webview. The source under .../webview/src/ stays tracked.
+# Portable Node 20.18 downloaded by cfx-scripts/ensure-node.mjs.
+.toolchain/
+
+
+# Output of build-fxgraph-webview — Vite bundle for the .fxgraph webview.
+# The source under .../webview/src/ stays tracked.
 src/vs/workbench/contrib/cfx/browser/graph/media/
 # Vite reinstalls the webview's deps each build then wipes them; the
 # generated lockfile churns and adds nothing reviewable.

@@ -54,16 +54,16 @@ class ScaffoldRunner extends Disposable {
 		}
 
 		const kind = await this.pickKind();
-		if (!kind) return;
+		if (!kind) { return; }
 
 		const name = await this.askName();
-		if (!name) return;
+		if (!name) { return; }
 
 		const parent = await this.pickParent(folder.uri);
-		if (!parent) return;
+		if (!parent) { return; }
 
 		const addEnsure = await this.askAddEnsure();
-		if (addEnsure === undefined) return;
+		if (addEnsure === undefined) { return; }
 
 		const targetFolder = joinPath(parent, name);
 		try {
@@ -119,7 +119,7 @@ class ScaffoldRunner extends Disposable {
 		return this.quickInputService.input({
 			prompt: localize('cfx.scaffold.name.prompt', 'Resource name (lowercase, hyphens / underscores allowed)'),
 			validateInput: async (value) => {
-				if (!value) return localize('cfx.scaffold.name.empty', 'Name required.');
+				if (!value) { return localize('cfx.scaffold.name.empty', 'Name required.'); }
 				if (!/^[a-z][a-z0-9_-]*$/.test(value)) {
 					return localize('cfx.scaffold.name.pattern', 'Use lowercase letters, digits, underscores, or hyphens; must start with a letter.');
 				}
@@ -151,7 +151,7 @@ class ScaffoldRunner extends Disposable {
 			},
 		];
 		const pick = await this.quickInputService.pick(choices, { placeHolder: localize('cfx.scaffold.parent.placeholder', 'Where should the new resource live?') });
-		if (!pick) return undefined;
+		if (!pick) { return undefined; }
 		switch (pick.id) {
 			case 'local':
 				try { await this.fileService.createFolder(defaultParent); } catch { /* */ }
@@ -172,7 +172,7 @@ class ScaffoldRunner extends Disposable {
 			],
 			{ placeHolder: localize('cfx.scaffold.ensure.placeholder', 'Add to server.cfg ensure chain?') },
 		);
-		if (!pick) return undefined;
+		if (!pick) { return undefined; }
 		return pick.id === 'yes';
 	}
 }
