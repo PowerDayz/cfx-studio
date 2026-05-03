@@ -16,6 +16,9 @@ import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js'
 // is available before any feature service tries to read a setting.
 import '../common/settings.js';
 
+// Side-effect import: registers IGameModeService as a singleton.
+import './gameMode/gameModeService.js';
+
 /**
  * Top-level Cfx Studio contribution. The skeleton patch (0015) registers the
  * lifecycle hook only; subsequent patches plug feature services into it
