@@ -152,6 +152,24 @@ html, body, #cfx-fxgraph-root {
 	outline: 1px solid var(--vscode-focusBorder, #007acc);
 }
 
+/* Hide native number-input spin buttons. The spinner's auto-repeat
+   was unbounded — clicking it bubbled into React-Flow's node-drag
+   handler, RF stole pointer capture, the matching mouseup never
+   reached the input, and the browser kept incrementing forever.
+   Removing the visual buttons sidesteps the trap entirely; keyboard
+   ↑/↓ still increments while focused. */
+.bnode .inline-input[type="number"]::-webkit-inner-spin-button,
+.bnode .inline-input[type="number"]::-webkit-outer-spin-button {
+	-webkit-appearance: none;
+	margin: 0;
+}
+.bnode .inline-input[type="number"] {
+	-moz-appearance: textfield;
+}
+
+/* Command node — orange-ish header to distinguish from purple events. */
+.bnode.kind-command .header { background: #c45a2a; color: #fff; }
+
 /* QuickAddMenu uses position: fixed so we can place it in viewport
    coordinates from clientX/clientY directly — no canvas-relative
    arithmetic, no surprises after zoom/pan. */

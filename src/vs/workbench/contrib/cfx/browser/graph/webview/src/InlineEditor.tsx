@@ -25,7 +25,7 @@ export const InlineValueEditor: React.FC<Props> = ({ type, value, onChange }) =>
 			return (
 				<input
 					type="checkbox"
-					className="inline-input"
+					className="inline-input nodrag nowheel"
 					checked={!!value}
 					onChange={(e) => onChange(e.target.checked)}
 					onMouseDown={stop}
@@ -36,7 +36,7 @@ export const InlineValueEditor: React.FC<Props> = ({ type, value, onChange }) =>
 			return (
 				<input
 					type="number"
-					className="inline-input"
+					className="inline-input nodrag nowheel"
 					value={typeof value === 'number' ? value : Number(value) || 0}
 					step={type === 'integer' ? 1 : 'any'}
 					onChange={(e) => onChange(Number(e.target.value))}
@@ -49,7 +49,7 @@ export const InlineValueEditor: React.FC<Props> = ({ type, value, onChange }) =>
 			return (
 				<input
 					type="text"
-					className="inline-input"
+					className="inline-input nodrag nowheel"
 					value={typeof value === 'string' ? value : String(value ?? '')}
 					placeholder={type === 'hash' ? '0x… or model name' : ''}
 					onChange={(e) => onChange(e.target.value)}
@@ -65,7 +65,7 @@ export const InlineValueEditor: React.FC<Props> = ({ type, value, onChange }) =>
 						<input
 							key={axis}
 							type="number"
-							className="inline-input"
+							className="inline-input nodrag nowheel"
 							style={{ width: 40 }}
 							value={v[i] ?? 0}
 							step="any"
