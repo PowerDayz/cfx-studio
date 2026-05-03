@@ -34,8 +34,15 @@ export interface INativesService {
 	/** Look up a single native by name. */
 	getByName(name: string): CfxNativeDef | undefined;
 
-	/** Substring + namespace search. Empty query returns up to `limit` entries. */
-	search(query: string, limit: number): ReadonlyArray<CfxNativeDef>;
+	/**
+	 * Substring + namespace search. Empty query returns up to `limit`
+	 * entries. When `scope` is provided, results are filtered by the
+	 * native's `apiset` field — `'client'` excludes server-only natives,
+	 * `'server'` excludes client-only natives, `'shared'` includes both.
+	 * Natives whose apiset is missing or unrecognised pass through (they
+	 * are most likely cross-context utility natives).
+	 */
+	search(query: string, limit: number, scope?: 'client' | 'server' | 'shared'): ReadonlyArray<CfxNativeDef>;
 
 	/** Fires when the loaded mode changes (e.g. workspace gamename flipped). */
 	readonly onDidChangeMode: Event<GameMode>;

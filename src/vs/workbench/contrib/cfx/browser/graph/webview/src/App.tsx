@@ -108,6 +108,34 @@ function EditorInner() {
 	const [nodes, setNodes, onNodesChangeRaw] = useNodesState<RFNode<FlowNodeData>>([]);
 	const [edges, setEdges, onEdgesChangeRaw] = useEdgesState<RFEdge>([]);
 
+	// Compute the set of (nodeId, pinId) pairs that are NON-PRIMITIVE arg
+	// pins with no incoming value edge. The pin renderer reads this Set
+	// to draw a small red marker — a visual cue that a required handle
+	// is missing. Codegen still produces runnable Lua (emits `nil`),
+	// the marker is advisory.
+	const missingPins = useMemo(() => {
+		const filled = new Set<string>();
+		for (const e of doc.edges) {
+			if (e.kind === 'value') filled.add(`${e.toNodeId}|${(e as ValueEdge).toPinId}`);
+		}
+		const missing = new Set<string>();
+		const isPrimitive = (t: string) =>
+			t === 'string' || t === 'integer' || t === 'number' || t === 'boolean' || t === 'vector3';
+		for (const n of doc.nodes) {
+			const pins =
+				n.kind === 'exec-call' ? n.argPins :
+				n.kind === 'control' ? n.argPins :
+				n.kind === 'pure' ? n.argPins :
+				n.kind === 'var-set' ? n.argPins :
+				[];
+			for (const p of pins) {
+				if (isPrimitive(p.type)) continue;
+				if (!filled.has(`${n.id}|${p.id}`)) missing.add(`${n.id}|${p.id}`);
+			}
+		}
+		return missing;
+	}, [doc]);
+
 	// Sync doc → react-flow node state. Keep in-progress drag positions
 	// so a node doesn't snap back to its persisted pos mid-drag. Also
 	// reads the legacy `position` field as a fallback for pre-0033
@@ -122,12 +150,12 @@ function EditorInner() {
 					id: bn.id,
 					type: 'blueprint',
 					position: prior?.dragging && prior.position ? prior.position : persistedPos,
-					data: { bnode: bn, onPatch: patchNode },
+					data: { bnode: bn, onPatch: patchNode, missingPins },
 					deletable: bn.kind !== 'event' || doc.nodes.filter((n) => n.kind === 'event').length > 1,
 				};
 			}),
 		);
-	}, [doc, patchNode, setNodes]);
+	}, [doc, patchNode, missingPins, setNodes]);
 
 	// Exec edges render as animated dashed white "thread of execution"
 	// lines (the deprecated editor's signature look). Value edges use a
@@ -253,6 +281,7 @@ function EditorInner() {
 	}, [updateDoc]);
 
 	const counts = useMemo(() => `${doc.nodes.length} nodes · ${doc.edges.length} edges`, [doc]);
+	const missingCount = missingPins.size;
 
 	return (
 		<div className="editor-host">
@@ -261,6 +290,17 @@ function EditorInner() {
 				<span style={{ color: 'var(--vscode-descriptionForeground)' }}>
 					Visual Graph — Space (or right-click) to add a node · {counts}
 				</span>
+				{missingCount > 0 && (
+					<span
+						style={{
+							color: 'var(--vscode-errorForeground, #f48771)',
+							fontWeight: 500,
+						}}
+						title="Each unconnected non-primitive arg pin compiles to nil — wire them or accept the default."
+					>
+						⚠ {missingCount} unwired pin{missingCount === 1 ? '' : 's'}
+					</span>
+				)}
 				<span style={{ flex: 1 }} />
 				<button onClick={() => {
 					const flow = flowRef.current;

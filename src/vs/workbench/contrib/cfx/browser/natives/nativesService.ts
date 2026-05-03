@@ -65,14 +65,30 @@ class NativesService extends Disposable implements INativesService {
 		return this._byName.get(name);
 	}
 
-	search(query: string, limit: number): ReadonlyArray<CfxNativeDef> {
+	search(query: string, limit: number, scope?: 'client' | 'server' | 'shared'): ReadonlyArray<CfxNativeDef> {
 		const trimmed = query.trim().toLowerCase();
-		if (!trimmed) {
-			return this._natives.slice(0, limit);
-		}
+		const matchScope = (n: CfxNativeDef): boolean => {
+			if (!scope || scope === 'shared') return true;
+			const apiset = (n.apiset ?? '').toLowerCase();
+			// `apiset` values commonly seen: 'client', 'server', 'shared'.
+			// Anything else (including missing) passes through; better to
+			// over-include than to silently hide a usable native.
+			if (apiset === 'client' || apiset === 'server' || apiset === 'shared') {
+				return apiset === scope || apiset === 'shared';
+			}
+			return true;
+		};
 		const out: CfxNativeDef[] = [];
+		if (!trimmed) {
+			for (const n of this._natives) {
+				if (out.length >= limit) break;
+				if (matchScope(n)) out.push(n);
+			}
+			return out;
+		}
 		for (const n of this._natives) {
 			if (out.length >= limit) break;
+			if (!matchScope(n)) continue;
 			if (n.name.toLowerCase().includes(trimmed) || n.ns.toLowerCase().includes(trimmed)) {
 				out.push(n);
 			}

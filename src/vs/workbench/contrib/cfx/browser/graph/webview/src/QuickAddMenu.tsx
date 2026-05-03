@@ -12,8 +12,6 @@ import {
 	nodeWhile,
 	nodeLiteral,
 	nodeEvent,
-	nodeVarGet,
-	nodeVarSet,
 } from '../../../../_shared/visual/dist/sig-to-node.js';
 import { STDLIB } from '../../../../_shared/visual/dist/stdlib.js';
 import { eventsForScope } from '../../../../_shared/visual/dist/events.js';
@@ -113,8 +111,9 @@ export const QuickAddMenu: React.FC<Props> = ({ pos, scope, onPick, onCancel }) 
 			});
 		}
 
-		out.push({ id: 'var:get', name: 'get variable', build: () => nodeVarGet('myVar', pos) });
-		out.push({ id: 'var:set', name: 'set variable', build: () => nodeVarSet('myVar', pos) });
+		// var-get / var-set deliberately omitted: the schema retains them
+		// for backward compat with old docs but they're not first-class
+		// in the editor until variables get a proper concept.
 
 		for (const sig of STDLIB) {
 			out.push({
