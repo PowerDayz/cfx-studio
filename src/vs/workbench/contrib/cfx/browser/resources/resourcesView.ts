@@ -22,7 +22,10 @@ import { ViewPane } from '../../../../browser/parts/views/viewPane.js';
 import { IViewDescriptorService } from '../../../../common/views.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
+import { IFileService } from '../../../../../platform/files/common/files.js';
+import { URI } from '../../../../../base/common/uri.js';
 import { joinPath } from '../../../../../base/common/resources.js';
+import { IServerCfgService } from '../../common/serverCfg.js';
 import {
 	IResourceDiscoveryService,
 	IResourceModel,
@@ -45,6 +48,8 @@ export class ResourcesViewPane extends ViewPane {
 	static readonly NAME: ILocalizedString = localize2('cfx.view.resources.title', 'Resources');
 
 	private listContainer: HTMLElement | undefined;
+	private readonly expanded = new Set<string>();
+	private readonly childrenCache = new Map<string, URI[]>();
 
 	constructor(
 		options: IViewletViewOptions,
@@ -61,6 +66,8 @@ export class ResourcesViewPane extends ViewPane {
 		@IResourceDiscoveryService private readonly discoveryService: IResourceDiscoveryService,
 		@IEditorService private readonly editorService: IEditorService,
 		@ICommandService private readonly commandService: ICommandService,
+		@IFileService private readonly fileService: IFileService,
+		@IServerCfgService private readonly serverCfgService: IServerCfgService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, telemetryService, hoverService);
 
@@ -113,12 +120,31 @@ export class ResourcesViewPane extends ViewPane {
 		row.style.padding = '2px 12px';
 		row.style.cursor = 'pointer';
 		row.tabIndex = 0;
-		row.setAttribute('role', 'button');
-		row.setAttribute('aria-label', `${resource.name} — ${runtimeStateLabel(resource.runtimeState)}`);
+		row.setAttribute('role', 'treeitem');
+		row.draggable = true;
+		row.dataset.cfxResource = resource.name;
+
+		const tooltip = composeTooltip(resource);
+		row.title = tooltip;
+		row.setAttribute('aria-label', `${resource.name} — ${tooltip.replace(/\n/g, ', ')}`);
+
+		const isExpanded = this.expanded.has(resource.name);
+		row.setAttribute('aria-expanded', String(isExpanded));
+
+		const chevron = dom.append(row, dom.$('span'));
+		chevron.className = ThemeIcon.asClassName(isExpanded ? Codicon.chevronDown : Codicon.chevronRight);
+		chevron.style.flex = '0 0 auto';
+		chevron.style.opacity = '0.65';
+		chevron.title = isExpanded ? 'Collapse' : 'Expand to show files';
+		this._register(dom.addDisposableListener(chevron, dom.EventType.CLICK, (e: MouseEvent) => {
+			e.stopPropagation();
+			this.toggleExpand(resource);
+		}));
 
 		const icon = dom.append(row, dom.$('span'));
 		icon.className = ThemeIcon.asClassName(stateIcon(resource));
 		icon.style.color = stateColor(resource.runtimeState, resource.ensureState);
+		icon.title = tooltip;
 
 		const name = dom.append(row, dom.$('span.cfx-resources-row-name'));
 		name.textContent = resource.name;
@@ -135,14 +161,145 @@ export class ResourcesViewPane extends ViewPane {
 		manifest.style.fontSize = '0.85em';
 		manifest.style.opacity = '0.5';
 		manifest.textContent = resource.manifestKind === '__resource' ? 'legacy' : '';
+		if (resource.manifestKind === '__resource') {
+			manifest.title = 'Uses the deprecated __resource.lua manifest. Consider renaming to fxmanifest.lua.';
+		}
 
+		// Click on row body opens manifest. Click on chevron toggles expand
+		// (handled above with stopPropagation).
 		this._register(dom.addDisposableListener(row, dom.EventType.CLICK, () => this.openManifest(resource)));
 		this._register(dom.addDisposableListener(row, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			if (e.key === 'Enter' || e.key === ' ') {
 				e.preventDefault();
 				this.openManifest(resource);
+			} else if (e.key === 'ArrowRight' && !isExpanded) {
+				e.preventDefault();
+				this.toggleExpand(resource);
+			} else if (e.key === 'ArrowLeft' && isExpanded) {
+				e.preventDefault();
+				this.toggleExpand(resource);
 			}
 		}));
+
+		// Native HTML5 drag-and-drop for ensure-chain reordering. Source +
+		// target are both resource names; drop position (before/after) is
+		// inferred from the cursor's vertical position within the target row.
+		this._register(dom.addDisposableListener(row, dom.EventType.DRAG_START, (e: DragEvent) => {
+			if (!e.dataTransfer) return;
+			e.dataTransfer.setData('application/x-cfx-resource', resource.name);
+			e.dataTransfer.effectAllowed = 'move';
+			row.style.opacity = '0.5';
+		}));
+		this._register(dom.addDisposableListener(row, dom.EventType.DRAG_END, () => {
+			row.style.opacity = '';
+			row.style.borderTop = '';
+			row.style.borderBottom = '';
+		}));
+		this._register(dom.addDisposableListener(row, dom.EventType.DRAG_OVER, (e: DragEvent) => {
+			if (!e.dataTransfer) return;
+			const src = e.dataTransfer.types.includes('application/x-cfx-resource');
+			if (!src) return;
+			e.preventDefault();
+			e.dataTransfer.dropEffect = 'move';
+			const rect = row.getBoundingClientRect();
+			const before = e.clientY < rect.top + rect.height / 2;
+			row.style.borderTop = before ? '2px solid var(--vscode-focusBorder, #007acc)' : '';
+			row.style.borderBottom = !before ? '2px solid var(--vscode-focusBorder, #007acc)' : '';
+		}));
+		this._register(dom.addDisposableListener(row, dom.EventType.DRAG_LEAVE, () => {
+			row.style.borderTop = '';
+			row.style.borderBottom = '';
+		}));
+		this._register(dom.addDisposableListener(row, dom.EventType.DROP, (e: DragEvent) => {
+			row.style.borderTop = '';
+			row.style.borderBottom = '';
+			const sourceName = e.dataTransfer?.getData('application/x-cfx-resource');
+			if (!sourceName || sourceName === resource.name) return;
+			e.preventDefault();
+			const rect = row.getBoundingClientRect();
+			const before = e.clientY < rect.top + rect.height / 2;
+			this.handleReorderDrop(sourceName, resource.name, before);
+		}));
+
+		// If expanded, render the file children inline below this row.
+		if (isExpanded) {
+			this.renderChildren(parent, resource);
+		}
+	}
+
+	private async toggleExpand(resource: IResourceModel): Promise<void> {
+		if (this.expanded.has(resource.name)) {
+			this.expanded.delete(resource.name);
+		} else {
+			this.expanded.add(resource.name);
+			if (!this.childrenCache.has(resource.name)) {
+				try {
+					const stat = await this.fileService.resolve(resource.folder, { resolveMetadata: false });
+					const children = (stat.children ?? [])
+						.filter((c) => !c.name.startsWith('.'))
+						.sort((a, b) => {
+							if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+							return a.name.localeCompare(b.name);
+						})
+						.map((c) => c.resource);
+					this.childrenCache.set(resource.name, children);
+				} catch {
+					this.childrenCache.set(resource.name, []);
+				}
+			}
+		}
+		this.renderRows();
+	}
+
+	private renderChildren(parent: HTMLElement, resource: IResourceModel): void {
+		const children = this.childrenCache.get(resource.name) ?? [];
+		if (children.length === 0) {
+			const empty = dom.append(parent, dom.$('.cfx-resources-empty-children'));
+			empty.style.padding = '2px 12px 2px 48px';
+			empty.style.opacity = '0.5';
+			empty.style.fontSize = '0.85em';
+			empty.textContent = '(no files)';
+			return;
+		}
+		for (const childUri of children) {
+			const childRow = dom.append(parent, dom.$('.cfx-resources-child-row'));
+			childRow.style.display = 'flex';
+			childRow.style.alignItems = 'center';
+			childRow.style.gap = '6px';
+			childRow.style.padding = '1px 12px 1px 36px';
+			childRow.style.cursor = 'pointer';
+			childRow.style.fontSize = '0.95em';
+			childRow.tabIndex = 0;
+			const isFolder = childUri.path.endsWith('/');
+			const childIcon = dom.append(childRow, dom.$('span'));
+			childIcon.className = ThemeIcon.asClassName(isFolder ? Codicon.folder : Codicon.file);
+			childIcon.style.opacity = '0.7';
+			const childName = dom.append(childRow, dom.$('span'));
+			const segments = childUri.path.split('/').filter(Boolean);
+			childName.textContent = segments[segments.length - 1] ?? childUri.path;
+			childName.style.flex = '1 1 auto';
+			childName.style.overflow = 'hidden';
+			childName.style.textOverflow = 'ellipsis';
+			childName.style.whiteSpace = 'nowrap';
+			this._register(dom.addDisposableListener(childRow, dom.EventType.CLICK, () => {
+				if (!isFolder) {
+					this.editorService.openEditor({ resource: childUri }).catch(() => { /* */ });
+				}
+			}));
+		}
+	}
+
+	private async handleReorderDrop(sourceName: string, targetName: string, insertBefore: boolean): Promise<void> {
+		const ordered = await this.serverCfgService.getEnsureChainOrdered();
+		const filtered = ordered.filter((n) => n !== sourceName);
+		const targetIdx = filtered.indexOf(targetName);
+		if (targetIdx === -1) {
+			// Target not in ensure chain; append source to end.
+			filtered.push(sourceName);
+		} else {
+			filtered.splice(insertBefore ? targetIdx : targetIdx + 1, 0, sourceName);
+		}
+		await this.serverCfgService.reorderEnsures(filtered);
 	}
 
 	private async openManifest(resource: IResourceModel): Promise<void> {
@@ -185,14 +342,27 @@ function stateColor(runtime: RuntimeState, ensure: 'in-ensure' | 'not-in-ensure'
 	}
 }
 
-function runtimeStateLabel(state: RuntimeState): string {
+/**
+ * Build a multi-line tooltip describing the resource's two state axes:
+ * ensure-chain membership (will it start when the server starts?) and
+ * runtime state (what is it doing right now?).
+ */
+function composeTooltip(resource: IResourceModel): string {
+	const ensureLine = resource.ensureState === 'in-ensure'
+		? localize('cfx.tooltip.inEnsure', 'In ensure chain — will start when the server starts.')
+		: localize('cfx.tooltip.notInEnsure', 'NOT in ensure chain. Use the Resources tree → right-click → Rename, or edit server.cfg, to add an "ensure {0}" line.', resource.name);
+	const runtimeLine = runtimeTooltipLine(resource.runtimeState);
+	return `${resource.name}\n${ensureLine}\n${runtimeLine}`;
+}
+
+function runtimeTooltipLine(state: RuntimeState): string {
 	switch (state) {
-		case 'starting': return localize('cfx.runtimeState.starting', 'starting');
-		case 'running': return localize('cfx.runtimeState.running', 'running');
-		case 'stopping': return localize('cfx.runtimeState.stopping', 'stopping');
-		case 'errored': return localize('cfx.runtimeState.errored', 'errored');
+		case 'starting': return localize('cfx.tooltip.runtime.starting', 'Currently starting…');
+		case 'running': return localize('cfx.tooltip.runtime.running', 'Currently running.');
+		case 'stopping': return localize('cfx.tooltip.runtime.stopping', 'Currently stopping…');
+		case 'errored': return localize('cfx.tooltip.runtime.errored', 'Errored — see Cfx Console for details.');
 		case 'idle':
 		default:
-			return localize('cfx.runtimeState.idle', 'idle');
+			return localize('cfx.tooltip.runtime.idle', 'Idle — server is not running, or this resource is not yet started.');
 	}
 }
