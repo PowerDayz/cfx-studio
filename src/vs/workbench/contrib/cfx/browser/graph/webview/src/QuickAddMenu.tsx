@@ -460,9 +460,11 @@ function buildSections(candidates: Candidate[]): Section[] {
 
 function rankCandidate(c: Candidate, q: string): number {
 	const name = c.name.toLowerCase();
-	if (name === q) return 1000;
-	if (name.startsWith(q)) return 500;
-	if (name.includes(q)) return 100;
+	const nameNoUs = name.replace(/_/g, '');
+	const qNoUs = q.replace(/_/g, '');
+	if (name === q || nameNoUs === qNoUs) return 1000;
+	if (name.startsWith(q) || nameNoUs.startsWith(qNoUs)) return 500;
+	if (name.includes(q) || nameNoUs.includes(qNoUs)) return 100;
 	const desc = (c.description ?? '').toLowerCase();
 	if (desc.includes(q)) return 10;
 	return 0;

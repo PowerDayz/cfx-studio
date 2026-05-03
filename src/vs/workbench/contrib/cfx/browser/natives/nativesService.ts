@@ -91,16 +91,22 @@ class NativesService extends Disposable implements INativesService {
 		// whichever namespace came first alphabetically — searches like
 		// `nod` returned only CAM hits because CAM filled the budget
 		// before the iterator reached PED / VEHICLE / ENTITY.
+		//
+		// Both query and candidate name are also compared in an
+		// underscore-stripped form so a query like `createcam` matches
+		// the catalog name `CREATE_CAM`.
+		const normQuery = trimmed.replace(/_/g, '');
 		const scored: { n: CfxNativeDef; score: number }[] = [];
 		for (const n of this._natives) {
 			if (!matchScope(n)) continue;
 			const name = n.name.toLowerCase();
+			const nameNoUs = name.replace(/_/g, '');
 			const ns = n.ns.toLowerCase();
 			let score = 0;
-			if (name === trimmed) score = 1000;
-			else if (name.startsWith(trimmed)) score = 500;
+			if (name === trimmed || nameNoUs === normQuery) score = 1000;
+			else if (name.startsWith(trimmed) || nameNoUs.startsWith(normQuery)) score = 500;
 			else if (name.includes(`_${trimmed}`)) score = 200;
-			else if (name.includes(trimmed)) score = 100;
+			else if (name.includes(trimmed) || nameNoUs.includes(normQuery)) score = 100;
 			else if (ns.startsWith(trimmed)) score = 60;
 			else if (ns.includes(trimmed)) score = 30;
 			else if ((n.description ?? '').toLowerCase().includes(trimmed)) score = 10;

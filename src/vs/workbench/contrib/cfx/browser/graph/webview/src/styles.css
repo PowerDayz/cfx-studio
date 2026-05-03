@@ -87,6 +87,14 @@ html, body, #cfx-fxgraph-root {
 .bnode.kind-var-get .header,
 .bnode.kind-var-set .header { background: #7a4f8a; color: #fff; }
 
+/* React-Flow tags the wrapper of each selected node with `.selected`.
+   Without this rule, box-select looks like nothing happened — the
+   node is selected internally but the user has no visual cue. */
+.react-flow__node.selected .bnode {
+	outline: 2px solid var(--vscode-focusBorder, #007acc);
+	outline-offset: 1px;
+}
+
 .bnode .pin-row {
 	/* Each pin row is its own positioning context so the React-Flow
 	   Handles inside it can anchor to the row's vertical centre instead

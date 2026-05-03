@@ -95,6 +95,11 @@ function EditorInner() {
 	const [showHelp, setShowHelp] = useState(false);
 	const [promoteMenu, setPromoteMenu] = useState<{ x: number; y: number; nodeId: string; pinId: string; type: EditorType } | null>(null);
 	const [boxSelect, setBoxSelect] = useState<{ x0: number; y0: number; x: number; y: number } | null>(null);
+	const [varModal, setVarModal] = useState<
+		| { mode: 'declare'; defaultName: string; defaultType: EditorType }
+		| { mode: 'promote'; defaultName: string; defaultType: EditorType; nodeId: string; pinId: string }
+		| null
+	>(null);
 	const flowRef = useRef<ReactFlowInstance | null>(null);
 	const docRef = useRef(doc);
 	docRef.current = doc;
@@ -108,8 +113,11 @@ function EditorInner() {
 	const connectStartRef = useRef<{ nodeId: string; pinId: string; handleType: 'source' | 'target' } | null>(null);
 	// Right-mouse-down tracking. We treat right-mouse-up as "open menu"
 	// when the drag distance is small, and as "commit box-select" when
-	// the user dragged past a small threshold.
-	const rightDragRef = useRef<{ startX: number; startY: number; dragging: boolean } | null>(null);
+	// the user dragged past a small threshold AND held the button long
+	// enough that it can't have been a normal click. The 14 px / 120 ms
+	// thresholds overshoot typical click jitter (≤10 px, ≤80 ms) so a
+	// regular right-click never accidentally enters selection mode.
+	const rightDragRef = useRef<{ startX: number; startY: number; downTime: number; dragging: boolean } | null>(null);
 
 	// Mutate the doc and notify the host. Each mutation also records the
 	// pre-mutation state on the history stack so Ctrl+Z can revert.
@@ -349,10 +357,9 @@ function EditorInner() {
 		// box-select — the drag handler set `dragging=true` and consumed
 		// the gesture; opening a menu on top of the just-drawn selection
 		// would be jarring.
-		if (rightDragRef.current?.dragging) {
-			rightDragRef.current = null;
-			return;
-		}
+		const wasDragging = rightDragRef.current?.dragging;
+		rightDragRef.current = null;
+		if (wasDragging) return;
 		const me = e as MouseEvent;
 		openQuickAddAt(me.clientX, me.clientY);
 	}, [openQuickAddAt]);
@@ -370,16 +377,22 @@ function EditorInner() {
 		if (target.closest('.react-flow__node') || target.closest('.react-flow__edge') || target.closest('.react-flow__handle')) {
 			return;
 		}
-		rightDragRef.current = { startX: e.clientX, startY: e.clientY, dragging: false };
+		rightDragRef.current = { startX: e.clientX, startY: e.clientY, downTime: Date.now(), dragging: false };
 	}, []);
 
 	const onCanvasMouseMove = useCallback((e: React.MouseEvent) => {
 		const start = rightDragRef.current;
 		if (!start) return;
-		const dx = e.clientX - start.startX;
-		const dy = e.clientY - start.startY;
-		if (!start.dragging && Math.hypot(dx, dy) < 6) return;
-		start.dragging = true;
+		if (!start.dragging) {
+			const dx = e.clientX - start.startX;
+			const dy = e.clientY - start.startY;
+			// Require BOTH a meaningful displacement and a meaningful
+			// hold time before entering drag mode. Either alone could
+			// be a normal right-click jitter.
+			if (Math.hypot(dx, dy) < 14) return;
+			if (Date.now() - start.downTime < 120) return;
+			start.dragging = true;
+		}
 		setBoxSelect({
 			x0: start.startX,
 			y0: start.startY,
@@ -676,21 +689,7 @@ function EditorInner() {
 				)}
 				<span style={{ flex: 1 }} />
 				<button
-					onClick={() => {
-						const raw = window.prompt('Variable name and type, e.g. `myCar: vehicle` or `score: integer`');
-						if (!raw) return;
-						const m = raw.trim().match(/^([A-Za-z_][\w]*)\s*:\s*([a-z0-9]+)$/);
-						if (!m) {
-							window.alert('Format: name: type (type one of integer, number, boolean, string, vector3, hash, ped, vehicle, entity, blip, player, any)');
-							return;
-						}
-						const name = m[1];
-						const type = m[2] as EditorType;
-						updateDoc((d) => ({
-							...d,
-							variables: [...(d.variables ?? []).filter((v) => v.name !== name), { name, type }],
-						}));
-					}}
+					onClick={() => setVarModal({ mode: 'declare', defaultName: 'myVar', defaultType: 'integer' })}
 					title="Declare a script-scope variable; appears as get/set entries in the node palette"
 				>+ Variable</button>
 				<button onClick={autoArrange} title="Lay out nodes left-to-right by exec flow">Auto-arrange</button>
@@ -756,10 +755,13 @@ function EditorInner() {
 					>
 						<button
 							onClick={() => {
-								const name = window.prompt(`Variable name for this ${promoteMenu.type} value:`, suggestVarName(promoteMenu.type));
-								if (!name) { setPromoteMenu(null); return; }
-								const safe = name.replace(/[^A-Za-z_]\w*/g, '').replace(/^[^A-Za-z_]+/, '') || 'v';
-								promoteToVariable(safe, promoteMenu.type, promoteMenu.nodeId, promoteMenu.pinId);
+								setVarModal({
+									mode: 'promote',
+									defaultName: suggestVarName(promoteMenu.type),
+									defaultType: promoteMenu.type,
+									nodeId: promoteMenu.nodeId,
+									pinId: promoteMenu.pinId,
+								});
 								setPromoteMenu(null);
 							}}
 						>
@@ -769,6 +771,25 @@ function EditorInner() {
 					</div>
 				)}
 			</div>
+			{varModal && (
+				<VariableModal
+					mode={varModal.mode}
+					defaultName={varModal.defaultName}
+					defaultType={varModal.defaultType}
+					onCancel={() => setVarModal(null)}
+					onSubmit={(name, type) => {
+						if (varModal.mode === 'declare') {
+							updateDoc((d) => ({
+								...d,
+								variables: [...(d.variables ?? []).filter((v) => v.name !== name), { name, type }],
+							}));
+						} else {
+							promoteToVariable(name, type, varModal.nodeId, varModal.pinId);
+						}
+						setVarModal(null);
+					}}
+				/>
+			)}
 			{showHelp && (
 				<div className="shortcuts-modal" onClick={() => setShowHelp(false)}>
 					<div className="shortcuts-card" onClick={(e) => e.stopPropagation()}>
@@ -809,6 +830,91 @@ function suggestVarName(t: EditorType): string {
 	} as Record<EditorType, string>)[t] ?? 'v';
 	return stem;
 }
+
+/**
+ * In-app modal for declaring a new variable or naming a promote-to-
+ * variable target. Replaces `window.prompt`, which VSCode webviews
+ * disable for security — that disabled prompt was the root cause of
+ * the "+ Variable button does nothing" bug.
+ */
+const VARIABLE_TYPES: EditorType[] = [
+	'integer', 'number', 'boolean', 'string', 'vector3', 'hash',
+	'entity', 'ped', 'vehicle', 'object', 'blip', 'player', 'any',
+];
+
+interface VariableModalProps {
+	mode: 'declare' | 'promote';
+	defaultName: string;
+	defaultType: EditorType;
+	onCancel: () => void;
+	onSubmit: (name: string, type: EditorType) => void;
+}
+
+const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaultType, onCancel, onSubmit }) => {
+	const [name, setName] = useState(defaultName);
+	const [type, setType] = useState<EditorType>(defaultType);
+	const inputRef = useRef<HTMLInputElement>(null);
+	useEffect(() => {
+		inputRef.current?.focus();
+		inputRef.current?.select();
+	}, []);
+	const submit = () => {
+		const safe = name.trim().match(/^[A-Za-z_][\w]*$/);
+		if (!safe) return;
+		onSubmit(name.trim(), type);
+	};
+	return (
+		<div className="shortcuts-modal" onClick={onCancel}>
+			<div className="shortcuts-card" style={{ minWidth: 360 }} onClick={(e) => e.stopPropagation()}>
+				<h3 style={{ margin: '0 0 12px' }}>
+					{mode === 'declare' ? 'Declare a new variable' : 'Promote value to a variable'}
+				</h3>
+				<div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+					<label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+						<span style={{ fontSize: 11, opacity: 0.75 }}>Name</span>
+						<input
+							ref={inputRef}
+							className="inline-input"
+							style={{ maxWidth: 'none', padding: '4px 8px' }}
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === 'Enter') submit();
+								if (e.key === 'Escape') onCancel();
+							}}
+							placeholder="e.g. myCar"
+						/>
+					</label>
+					<label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+						<span style={{ fontSize: 11, opacity: 0.75 }}>Type</span>
+						<select
+							className="inline-input"
+							style={{ maxWidth: 'none', padding: '4px 8px' }}
+							value={type}
+							onChange={(e) => setType(e.target.value as EditorType)}
+						>
+							{VARIABLE_TYPES.map((t) => (
+								<option key={t} value={t}>{t}</option>
+							))}
+						</select>
+					</label>
+				</div>
+				<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+					<button onClick={onCancel}>Cancel</button>
+					<button
+						onClick={submit}
+						style={{
+							background: 'var(--vscode-button-background, #0e639c)',
+							color: 'var(--vscode-button-foreground, #fff)',
+						}}
+					>
+						{mode === 'declare' ? 'Declare' : 'Promote'}
+					</button>
+				</div>
+			</div>
+		</div>
+	);
+};
 
 function isInputFocused(): boolean {
 	const el = document.activeElement;
