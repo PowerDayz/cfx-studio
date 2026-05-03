@@ -29,7 +29,7 @@ import type {
 	ValueEdge,
 } from '../../../../_shared/visual/dist/doc.js';
 import { emptyGraphDoc, nextEdgeId } from '../../../../_shared/visual/dist/doc.js';
-import { nodeVarSet, nodeVarGet, nodeCustomEvent, nodeCommand } from '../../../../_shared/visual/dist/sig-to-node.js';
+import { nodeVarSet, nodeVarGet, nodeCustomEvent, nodeCommand, nodeTriggerEvent } from '../../../../_shared/visual/dist/sig-to-node.js';
 import { isAssignable, type EditorType } from '../../../../_shared/visual/dist/types.js';
 
 import { vscode } from './messages';
@@ -742,6 +742,7 @@ function EditorInner() {
 						scope={doc.scope}
 						seed={quickAdd.seed}
 						variables={doc.variables}
+						customEvents={customEventsForDoc(doc)}
 						onAddCustomEvent={(fp) => setEventModal({ flowPos: fp })}
 						onAddCommand={(fp) => setCommandModal({ flowPos: fp })}
 						onPick={insertNode}
@@ -1190,6 +1191,28 @@ function pinColorOf(edge: BEdge, doc: GraphDoc): string {
  * still leave the user to wire manually. Returns null when nothing
  * sensible matches; the new node is inserted unwired in that case.
  */
+/**
+ * Walk the doc's nodes for `event` kind with `isCustom: true` and
+ * project them into the shape QuickAddMenu uses to build "trigger
+ * <name>" candidates — so every custom event gets a one-click
+ * trigger node, the same way variables get one-click get/set.
+ */
+function customEventsForDoc(doc: GraphDoc): { name: string; isNet: boolean; params: { name: string; type: EditorType }[] }[] {
+	const seen = new Set<string>();
+	const out: { name: string; isNet: boolean; params: { name: string; type: EditorType }[] }[] = [];
+	for (const n of doc.nodes) {
+		if (n.kind !== 'event' || !n.isCustom) continue;
+		if (seen.has(n.event)) continue;
+		seen.add(n.event);
+		out.push({
+			name: n.event,
+			isNet: !!n.isNet,
+			params: (n.outValuePins ?? []).map((p) => ({ name: p.name, type: p.type as EditorType })),
+		});
+	}
+	return out;
+}
+
 function autoWireSeed(seed: NonNullable<QuickAddState['seed']>, node: BNode): BEdge | null {
 	const opposite = seed.direction === 'source' ? 'input' : 'output';
 	// Inspect the new node for a compatible pin on the opposite side.
