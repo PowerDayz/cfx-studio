@@ -55,12 +55,8 @@ class DownloadArtifactsAction extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const notification = accessor.get(INotificationService);
-		// Artifact download UI lands as a follow-up patch (it requires
-		// HTTP fetch + 7zip-bin extract running in electron-sandbox).
-		// This stub keeps the command stable so the first-run UX can
-		// reference it from Phase G onward.
-		notification.info(localize('cfx.server.downloadArtifacts.notReady', 'Artifact download ships in a follow-up patch. Use Cfx: Locate FXServer.exe to point at an existing install.'));
+		const { runArtifactDownload } = await import('../server/artifactsPicker.js');
+		await runArtifactDownload(accessor);
 	}
 }
 

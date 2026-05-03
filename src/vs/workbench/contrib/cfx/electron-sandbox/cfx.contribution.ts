@@ -11,6 +11,17 @@
  * the main browser-side `cfx.contribution.ts` runs.
  */
 
-// Side-effect import: registers IFXServerService as a singleton with the
-// child_process-backed implementation.
+// Side-effect import: registers ICfxNodeService as a renderer-side proxy
+// over the shared-process channel. The actual Node implementation is in
+// `node/cfxNodeServiceImpl.ts` and gets registered by the patched
+// sharedProcessMain.ts.
+import './cfxNodeServiceClient.js';
+
+// Side-effect import: registers IFXServerService (renderer-side
+// orchestrator that delegates spawn to ICfxNodeService).
 import './server/fxserverService.js';
+
+// Side-effect import: registers IArtifactsService for FXServer artifact
+// download + extract. Composes IRequestService (HTTP) + ICfxNodeService
+// (extraction).
+import './server/artifactsService.js';

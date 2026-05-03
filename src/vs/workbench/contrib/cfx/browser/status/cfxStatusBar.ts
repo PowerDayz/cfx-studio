@@ -113,6 +113,9 @@ class PlayServerAction extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
+		const { resolveFxServerPath } = await import('../server/firstRunPrompt.js');
+		const exePath = await resolveFxServerPath(accessor);
+		if (!exePath) return;
 		await accessor.get(IFXServerService).start();
 	}
 }
