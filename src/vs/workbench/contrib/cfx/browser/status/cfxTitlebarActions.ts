@@ -17,7 +17,6 @@ import {
 	ContextKeyExpr,
 	IContextKey,
 	IContextKeyService,
-	RawContextKey,
 } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import {
@@ -129,7 +128,9 @@ class StartFxServerAction extends Action2 {
 		const instantiationService = accessor.get(IInstantiationService);
 		const fxServer = accessor.get(IFXServerService);
 		const exePath = await resolveFxServerPath(instantiationService);
-		if (!exePath) return;
+		if (!exePath) {
+			return;
+		}
 		await fxServer.start();
 	}
 }
@@ -184,11 +185,17 @@ class RestartCurrentResourceAction extends Action2 {
 		const fxServer = accessor.get(IFXServerService);
 
 		const uri = editorService.activeEditor?.resource;
-		if (!uri) return;
+		if (!uri) {
+			return;
+		}
 		const folder = await findResourceFolder(fileService, uri);
-		if (!folder) return;
+		if (!folder) {
+			return;
+		}
 		const name = folder.path.split('/').filter(Boolean).pop();
-		if (!name) return;
+		if (!name) {
+			return;
+		}
 		await fxServer.restartResource(name);
 	}
 }
@@ -226,16 +233,22 @@ class CfxTitlebarStateContribution extends Disposable implements IWorkbenchContr
 		const gen = ++this.generation;
 		const uri = this.editorService.activeEditor?.resource;
 		if (!uri) {
-			if (gen === this.generation) this.activeResource.set('');
+			if (gen === this.generation) {
+				this.activeResource.set('');
+			}
 			return;
 		}
 		try {
 			const folder = await findResourceFolder(this.fileService, uri);
-			if (gen !== this.generation) return;
+			if (gen !== this.generation) {
+				return;
+			}
 			const name = folder ? folder.path.split('/').filter(Boolean).pop() ?? '' : '';
 			this.activeResource.set(name);
 		} catch {
-			if (gen === this.generation) this.activeResource.set('');
+			if (gen === this.generation) {
+				this.activeResource.set('');
+			}
 		}
 	}
 }
