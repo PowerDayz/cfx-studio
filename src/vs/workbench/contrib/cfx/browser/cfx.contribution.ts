@@ -38,6 +38,13 @@ registerStatusBarContribution();
 import { registerAutoRestartContribution } from './server/autoRestart.js';
 registerAutoRestartContribution();
 
+// Console subsystem (Phase D). Service + bottom-panel view + commands.
+import './console/consoleService.js';
+import './console/consoleViewContainer.js';
+
+import { registerConsoleActions } from './console/consoleActions.js';
+registerConsoleActions();
+
 /**
  * Top-level Cfx Studio contribution. The skeleton patch (0015) registers the
  * lifecycle hook only; subsequent patches plug feature services into it
