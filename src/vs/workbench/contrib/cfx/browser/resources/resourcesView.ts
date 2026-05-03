@@ -34,6 +34,7 @@ import {
 	IResourceModel,
 	type RuntimeState,
 } from '../../common/resources.js';
+import { FxGraphEditorInput } from '../graph/fxgraphEditorInput.js';
 
 /**
  * Read-only Resources view: one row per discovered Cfx resource. Clicking a
@@ -294,7 +295,8 @@ export class ResourcesViewPane extends ViewPane {
 			childName.style.whiteSpace = 'nowrap';
 			this._register(dom.addDisposableListener(childRow, dom.EventType.CLICK, () => {
 				if (!isFolder) {
-					this.editorService.openEditor({ resource: childUri }).catch(() => { /* */ });
+					console.log('[cfx] resourcesView child click', childUri.toString());
+					this.openWithCorrectEditor(childUri).catch((err) => console.error('[cfx] openEditor failed', err));
 				}
 			}));
 		}
@@ -318,7 +320,26 @@ export class ResourcesViewPane extends ViewPane {
 		this.commandService.executeCommand('cfx.console.focusResource', resource.name).catch(() => { /* */ });
 
 		const target = await this.pickEntryFile(resource);
-		await this.editorService.openEditor({ resource: target, options: { preserveFocus: false } });
+		console.log('[cfx] resourcesView openEntryFile', resource.name, '→', target.toString());
+		await this.openWithCorrectEditor(target);
+	}
+
+	/**
+	 * For `.fxgraph` files, construct the FxGraphEditorInput directly and
+	 * hand it to openEditor — bypassing IEditorResolverService entirely.
+	 * On this build the resolver is failing to route .fxgraph URIs to our
+	 * registration despite registerEditor returning successfully, so we
+	 * route explicitly. The pane is matched via the SyncDescriptor
+	 * registered in fxgraphEditorContribution.ts.
+	 */
+	private async openWithCorrectEditor(uri: URI): Promise<void> {
+		if (uri.path.toLowerCase().endsWith('.fxgraph')) {
+			console.log('[cfx] openWithCorrectEditor → constructing FxGraphEditorInput for', uri.toString());
+			const input = new FxGraphEditorInput(uri);
+			await this.editorService.openEditor(input, { preserveFocus: false });
+			return;
+		}
+		await this.editorService.openEditor({ resource: uri, options: { preserveFocus: false } });
 	}
 
 	private async openManifest(resource: IResourceModel): Promise<void> {

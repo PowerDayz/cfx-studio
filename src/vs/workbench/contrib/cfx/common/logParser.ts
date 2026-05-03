@@ -29,15 +29,27 @@ export interface LogEvent {
 	readonly kind: LogEventKind;
 }
 
-const STARTED_RE = /^Started resource (\S+)/;
-const STOPPED_RE = /^Stopping resource (\S+)/;
-const ERROR_RE = /^Couldn't (?:start|load) resource (\S+):/;
-const SCRIPT_PREFIX_RE = /^\[script:([^\]]+)\]/;
-const GENERIC_PREFIX_RE = /^\[([a-z][a-z0-9_-]*)\]/i;
+// Match these anywhere in the line — FXServer prefixes every log with
+// `<color codes>[ <category> ]<color codes>` so anchored-at-start
+// patterns never fired.
+const STARTED_RE = /Started resource (\S+)/;
+const STOPPED_RE = /Stopping resource (\S+)/;
+const ERROR_RE = /Couldn't (?:start|load) resource (\S+):/;
+const SCRIPT_PREFIX_RE = /^\s*\[script:([^\]]+)\]/;
+const GENERIC_PREFIX_RE = /^\s*\[([a-z][a-z0-9_-]*)\]/i;
 const SERVER_UP_RE = /Server is up/i;
 
+// CSI ANSI escape stripper. Matches `ESC [ <digits/semicolons> <letter>`.
+const ANSI_RE = /\x1b\[[\d;]*[A-Za-z]/g;
+
+/** Strip CSI ANSI color/cursor escapes from a string. */
+export function stripAnsi(s: string): string {
+	return s.replace(ANSI_RE, '');
+}
+
 export function parseLogLine(raw: string): LogEvent {
-	const line = raw.replace(/\r$/, '');
+	// Strip ANSI + trailing CR so the regexes below can match plain text.
+	const line = stripAnsi(raw).replace(/\r$/, '');
 
 	let m = STARTED_RE.exec(line);
 	if (m) return { raw, resourceName: m[1], kind: 'started' };

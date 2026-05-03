@@ -19,6 +19,7 @@ import { IViewletViewOptions } from '../../../../browser/parts/views/viewsViewle
 import { ViewPane } from '../../../../browser/parts/views/viewPane.js';
 import { IViewDescriptorService } from '../../../../common/views.js';
 import { ALL_OUTPUT_SCOPE, ConsoleScope, IConsoleService } from '../../common/console.js';
+import { stripAnsi } from '../../common/logParser.js';
 
 /**
  * Read-only console view for the bottom panel. Two tabs:
@@ -132,7 +133,7 @@ export class ConsoleViewPane extends ViewPane {
 		// Render in chunks of 500 to avoid blocking on first load with full
 		// 10k-line buffer; for now, single render is fine since DOM textContent
 		// for ~10k short lines is well under 10 ms.
-		this.logContainer.textContent = lines.join('\n');
+		this.logContainer.textContent = lines.map(stripAnsi).join('\n');
 
 		if (wasNearBottom) {
 			this.logContainer.scrollTop = this.logContainer.scrollHeight;
