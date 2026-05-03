@@ -154,6 +154,12 @@ class FXServerService extends Disposable implements IFXServerService {
 						this.discoveryService.setRuntimeState(evt.resourceName, 'running');
 						this._onDidChangeResourceState.fire({ resourceName: evt.resourceName, state: 'running' });
 					}
+					// FXServer build doesn't always print a "Server is up" line.
+					// First successful resource start is sufficient evidence the
+					// server is past boot — flip to running so the UI unblocks.
+					if (this._state === 'starting') {
+						this.transition('running');
+					}
 					break;
 				case 'stopped':
 					if (evt.resourceName) {
