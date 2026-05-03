@@ -113,6 +113,13 @@ function EditorInner() {
 	// Tracks which pin a connect-drag started from so onConnectEnd can
 	// turn an empty-canvas drop into a seeded QuickAddMenu open.
 	const connectStartRef = useRef<{ nodeId: string; pinId: string; handleType: 'source' | 'target' } | null>(null);
+	// Comment-group drag: when the user starts dragging a comment, take a
+	// snapshot of every other node whose position falls inside the
+	// comment's current rect. During the drag, apply the same delta to
+	// each captured child so the comment + its visual contents move as
+	// one — UE-Blueprint comment-group semantics.
+	const commentDragRef = useRef<{ commentId: string; origin: { x: number; y: number }; children: { id: string; offset: { x: number; y: number } }[] } | null>(null);
+
 	// Right-mouse-down tracking. We treat right-mouse-up as "open menu"
 	// when the drag distance is small, and as "commit box-select" when
 	// the user dragged past a small threshold AND held the button long
@@ -221,12 +228,21 @@ function EditorInner() {
 				const prior = current.find((n) => n.id === bn.id);
 				const legacyPos = (bn as { position?: { x: number; y: number } }).position;
 				const persistedPos = bn.pos ?? legacyPos ?? { x: 0, y: 0 };
+				const isComment = bn.kind === 'comment';
 				return {
 					id: bn.id,
 					type: 'blueprint',
 					position: prior?.dragging && prior.position ? prior.position : persistedPos,
 					data: { bnode: bn, onPatch: patchNode, missingPins },
 					deletable: bn.kind !== 'event' || doc.nodes.filter((n) => n.kind === 'event').length > 1,
+					// Comments behave as a background label: the inner body
+					// is click-through (`pointer-events: none`), and the
+					// header is the only drag handle. Lower zIndex so
+					// nodes render in front; lets the comment serve as a
+					// region-label without blocking edits to nodes inside it.
+					...(isComment
+						? { dragHandle: '.bnode.kind-comment .header', zIndex: -1, selectable: true }
+						: {}),
 				};
 			}),
 		);
@@ -352,6 +368,67 @@ function EditorInner() {
 		const flowPos = flow.screenToFlowPosition({ x: screenX, y: screenY });
 		setQuickAdd({ screen: { x: screenX, y: screenY }, flow: flowPos, seed });
 	}, []);
+
+	const onNodeDragStart: React.ComponentProps<typeof ReactFlow>['onNodeDragStart'] = useCallback((_e, node) => {
+		const data = node.data as FlowNodeData | undefined;
+		if (!data || data.bnode.kind !== 'comment') return;
+		const cmt = data.bnode as Extract<BNode, { kind: 'comment' }>;
+		const w = cmt.size?.w ?? 240;
+		const h = cmt.size?.h ?? 120;
+		const ox = node.position.x;
+		const oy = node.position.y;
+		const x1 = ox + w;
+		const y1 = oy + h;
+		// Snapshot children at drag-start; membership is implicit from
+		// spatial overlap. A node added to the comment AFTER the drag
+		// started won't retroactively join — matches Blueprint exactly.
+		const children: { id: string; offset: { x: number; y: number } }[] = [];
+		for (const other of nodes) {
+			if (other.id === node.id) continue;
+			const od = other.data as FlowNodeData | undefined;
+			if (od?.bnode.kind === 'comment') continue;
+			const p = other.position;
+			if (p.x >= ox && p.x <= x1 && p.y >= oy && p.y <= y1) {
+				children.push({ id: other.id, offset: { x: p.x - ox, y: p.y - oy } });
+			}
+		}
+		commentDragRef.current = { commentId: node.id, origin: { x: ox, y: oy }, children };
+	}, [nodes]);
+
+	const onNodeDrag: React.ComponentProps<typeof ReactFlow>['onNodeDrag'] = useCallback((_e, node) => {
+		const drag = commentDragRef.current;
+		if (!drag || drag.commentId !== node.id) return;
+		const dx = node.position.x - drag.origin.x;
+		const dy = node.position.y - drag.origin.y;
+		setNodes((curr) =>
+			curr.map((n) => {
+				const child = drag.children.find((c) => c.id === n.id);
+				if (!child) return n;
+				return { ...n, position: { x: drag.origin.x + child.offset.x + dx, y: drag.origin.y + child.offset.y + dy } };
+			}),
+		);
+	}, [setNodes]);
+
+	const onNodeDragStop: React.ComponentProps<typeof ReactFlow>['onNodeDragStop'] = useCallback((_e, node) => {
+		const drag = commentDragRef.current;
+		if (!drag || drag.commentId !== node.id) {
+			commentDragRef.current = null;
+			return;
+		}
+		const dx = node.position.x - drag.origin.x;
+		const dy = node.position.y - drag.origin.y;
+		commentDragRef.current = null;
+		// Persist the per-child position changes in one updateDoc batch.
+		updateDoc((d) => ({
+			...d,
+			nodes: d.nodes.map((n) => {
+				const child = drag.children.find((c) => c.id === n.id);
+				if (!child) return n;
+				const basePos = n.pos ?? { x: 0, y: 0 };
+				return { ...n, pos: { x: basePos.x + dx, y: basePos.y + dy } } as BNode;
+			}),
+		}));
+	}, [updateDoc]);
 
 	const onPaneContextMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
 		e.preventDefault();
@@ -719,6 +796,9 @@ function EditorInner() {
 					onEdgesChange={onEdgesChange}
 					onConnect={onConnect}
 					onConnectStart={onConnectStart}
+					onNodeDragStart={onNodeDragStart}
+					onNodeDrag={onNodeDrag}
+					onNodeDragStop={onNodeDragStop}
 					onConnectEnd={onConnectEnd}
 					onPaneContextMenu={onPaneContextMenu}
 					onInit={(inst) => { flowRef.current = inst; }}

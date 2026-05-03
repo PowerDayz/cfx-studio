@@ -4,6 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../../base/browser/dom.js';
+import { DomScrollableElement } from '../../../../../base/browser/ui/scrollbar/scrollableElement.js';
+import { ScrollbarVisibility } from '../../../../../base/common/scrollable.js';
 import { localize2 } from '../../../../../nls.js';
 import { ILocalizedString } from '../../../../../platform/action/common/action.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
@@ -36,6 +38,7 @@ export class ConsoleViewPane extends ViewPane {
 
 	private tabsContainer: HTMLElement | undefined;
 	private logContainer: HTMLElement | undefined;
+	private logScrollable: DomScrollableElement | undefined;
 	private currentScope: ConsoleScope = ALL_OUTPUT_SCOPE;
 
 	constructor(
@@ -79,13 +82,23 @@ export class ConsoleViewPane extends ViewPane {
 		this.tabsContainer.style.borderBottom = '1px solid var(--vscode-panel-border, #444)';
 		this.tabsContainer.style.padding = '4px 6px';
 
-		this.logContainer = dom.append(container, dom.$('.cfx-console-log'));
-		this.logContainer.style.flex = '1 1 auto';
-		this.logContainer.style.overflowY = 'auto';
+		// Wrap the log content element in a DomScrollableElement so the
+		// scrollbar inherits the VSCode theme (slim, semi-transparent,
+		// matches the Output / Problems panels) instead of falling back
+		// to the OS chrome scrollbar.
+		this.logContainer = dom.$('.cfx-console-log');
 		this.logContainer.style.fontFamily = 'var(--monaco-monospace-font, monospace)';
 		this.logContainer.style.fontSize = '12px';
 		this.logContainer.style.padding = '4px 8px';
 		this.logContainer.style.whiteSpace = 'pre';
+		this.logScrollable = this._register(new DomScrollableElement(this.logContainer, {
+			vertical: ScrollbarVisibility.Auto,
+			horizontal: ScrollbarVisibility.Auto,
+			useShadows: false,
+		}));
+		this.logScrollable.getDomNode().style.flex = '1 1 auto';
+		this.logScrollable.getDomNode().style.minHeight = '0';
+		dom.append(container, this.logScrollable.getDomNode());
 
 		this.refreshTabs();
 		this.refreshLog();
@@ -93,6 +106,7 @@ export class ConsoleViewPane extends ViewPane {
 
 	protected override layoutBody(height: number, width: number): void {
 		super.layoutBody(height, width);
+		this.logScrollable?.scanDomNode();
 	}
 
 	private refreshTabs(): void {
@@ -125,7 +139,7 @@ export class ConsoleViewPane extends ViewPane {
 	}
 
 	private refreshLog(): void {
-		if (!this.logContainer) return;
+		if (!this.logContainer || !this.logScrollable) return;
 		const lines = this.consoleService.getLines(this.currentScope);
 		const wasNearBottom = this.isScrolledNearBottom();
 
@@ -135,14 +149,19 @@ export class ConsoleViewPane extends ViewPane {
 		// for ~10k short lines is well under 10 ms.
 		this.logContainer.textContent = lines.map(stripAnsi).join('\n');
 
+		// Tell DomScrollableElement to recalc scrollHeight from the new
+		// content, then auto-scroll to the bottom if we were tailing.
+		this.logScrollable.scanDomNode();
 		if (wasNearBottom) {
-			this.logContainer.scrollTop = this.logContainer.scrollHeight;
+			const dim = this.logScrollable.getScrollDimensions();
+			this.logScrollable.setScrollPosition({ scrollTop: dim.scrollHeight });
 		}
 	}
 
 	private isScrolledNearBottom(): boolean {
-		const el = this.logContainer;
-		if (!el) return true;
-		return el.scrollTop + el.clientHeight >= el.scrollHeight - 32;
+		if (!this.logScrollable) return true;
+		const pos = this.logScrollable.getScrollPosition();
+		const dim = this.logScrollable.getScrollDimensions();
+		return pos.scrollTop + dim.height >= dim.scrollHeight - 32;
 	}
 }
