@@ -1,8 +1,13 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Cfx Studio. All rights reserved.
+ *  Licensed under the MIT License.
+ *--------------------------------------------------------------------------------------------*/
+
 import React, { useState } from 'react';
 import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react';
 
-import type { BNode, PinDef } from '../../../../_shared/visual/dist/doc.js';
-import type { EditorType } from '../../../../_shared/visual/dist/types.js';
+import type { BNode, PinDef } from '../../../../_shared/visual/doc.js';
+import type { EditorType } from '../../../../_shared/visual/types.js';
 import { InlineValueEditor } from './InlineEditor.js';
 
 /**

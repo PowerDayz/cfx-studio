@@ -27,10 +27,10 @@ import type {
 	ExecEdge,
 	PinDef,
 	ValueEdge,
-} from '../../../../_shared/visual/dist/doc.js';
-import { emptyGraphDoc, nextEdgeId } from '../../../../_shared/visual/dist/doc.js';
-import { nodeVarSet, nodeVarGet, nodeCustomEvent, nodeCommand, nodeTriggerEvent } from '../../../../_shared/visual/dist/sig-to-node.js';
-import { isAssignable, type EditorType } from '../../../../_shared/visual/dist/types.js';
+} from '../../../../_shared/visual/doc.js';
+import { emptyGraphDoc, nextEdgeId } from '../../../../_shared/visual/doc.js';
+import { nodeVarSet, nodeVarGet, nodeCustomEvent, nodeCommand, nodeTriggerEvent } from '../../../../_shared/visual/sig-to-node.js';
+import { isAssignable, type EditorType } from '../../../../_shared/visual/types.js';
 
 import { vscode } from './messages';
 import { NODE_TYPES } from './nodes.js';
@@ -703,6 +703,20 @@ function EditorInner() {
 	const counts = useMemo(() => `${doc.nodes.length} nodes · ${doc.edges.length} edges`, [doc]);
 	const missingCount = missingPins.size;
 
+	/** Click-to-debug: select every node that has at least one unwired
+	 * non-primitive arg pin so the user can see exactly which ones need
+	 * attention. We bypass the React-Flow selection helpers and toggle
+	 * the `selected` flag on each node directly so a single click can
+	 * select multiple nodes at once. */
+	const selectMissingPinNodes = useCallback(() => {
+		if (missingPins.size === 0) return;
+		const nodeIds = new Set<string>();
+		for (const key of missingPins) {
+			nodeIds.add(key.split('|')[0]);
+		}
+		setNodes((current) => current.map((n) => ({ ...n, selected: nodeIds.has(n.id) })));
+	}, [missingPins, setNodes]);
+
 	const autoArrange = useCallback(() => {
 		updateDoc((d) => {
 			// Layered LR: BFS from each event's exec output, assigning
@@ -764,15 +778,21 @@ function EditorInner() {
 					Visual Graph — Space (or right-click) to add a node · {counts}
 				</span>
 				{missingCount > 0 && (
-					<span
+					<button
+						type="button"
+						onClick={selectMissingPinNodes}
 						style={{
 							color: 'var(--vscode-errorForeground, #f48771)',
 							fontWeight: 500,
+							background: 'transparent',
+							border: 'none',
+							cursor: 'pointer',
+							padding: '2px 6px',
 						}}
-						title="Each unconnected non-primitive arg pin compiles to nil — wire them or accept the default."
+						title="Click to select every node with an unwired pin so you can see exactly which ones need attention. Each unconnected non-primitive arg pin compiles to nil — wire them or accept the default."
 					>
 						⚠ {missingCount} unwired pin{missingCount === 1 ? '' : 's'}
-					</span>
+					</button>
 				)}
 				<span style={{ flex: 1 }} />
 				<button

@@ -1,0 +1,18 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Cfx Studio. All rights reserved.
+ *  Licensed under the MIT License.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Suppress the browser's native scrollbar on the inner log element. */
+/* The wrapper around it (DomScrollableElement) renders its own themed */
+/* scrollbar; without these rules WebKit/Chrome would also draw a */
+/* default OS scrollbar, doubling up. */
+.cfx-console-log {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+.cfx-console-log::-webkit-scrollbar {
+	display: none;
+	width: 0;
+	height: 0;
+}

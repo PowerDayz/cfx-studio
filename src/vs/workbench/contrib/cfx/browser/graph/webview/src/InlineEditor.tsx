@@ -1,6 +1,11 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Cfx Studio. All rights reserved.
+ *  Licensed under the MIT License.
+ *--------------------------------------------------------------------------------------------*/
+
 import React from 'react';
 
-import type { EditorType } from '../../../../_shared/visual/dist/types.js';
+import type { EditorType } from '../../../../_shared/visual/types.js';
 
 interface Props {
 	type: EditorType;

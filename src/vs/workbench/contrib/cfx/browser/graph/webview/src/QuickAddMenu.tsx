@@ -1,9 +1,14 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Cfx Studio. All rights reserved.
+ *  Licensed under the MIT License.
+ *--------------------------------------------------------------------------------------------*/
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import type { BNode } from '../../../../_shared/visual/dist/doc.js';
-import type { EditorType } from '../../../../_shared/visual/dist/types.js';
-import { isAssignable } from '../../../../_shared/visual/dist/types.js';
-import type { GraphScope } from '../../../../_shared/visual/dist/doc.js';
+import type { BNode } from '../../../../_shared/visual/doc.js';
+import type { EditorType } from '../../../../_shared/visual/types.js';
+import { isAssignable } from '../../../../_shared/visual/types.js';
+import type { GraphScope } from '../../../../_shared/visual/doc.js';
 import {
 	nodeFromStdlib,
 	nodeFromNative,
@@ -16,10 +21,10 @@ import {
 	nodeVarGet,
 	nodeVarSet,
 	nodeTriggerEvent,
-} from '../../../../_shared/visual/dist/sig-to-node.js';
-import { STDLIB, RUNTIME_BUILTINS, findStdlib, type StdlibSig } from '../../../../_shared/visual/dist/stdlib.js';
-import { nextNodeId } from '../../../../_shared/visual/dist/doc.js';
-import { eventsForScope } from '../../../../_shared/visual/dist/events.js';
+} from '../../../../_shared/visual/sig-to-node.js';
+import { STDLIB, RUNTIME_BUILTINS, findStdlib, type StdlibSig } from '../../../../_shared/visual/stdlib.js';
+import { nextNodeId } from '../../../../_shared/visual/doc.js';
+import { eventsForScope } from '../../../../_shared/visual/events.js';
 import { vscode } from './messages';
 
 // vec3_x/y/z still exist in the stdlib but the editor now wires

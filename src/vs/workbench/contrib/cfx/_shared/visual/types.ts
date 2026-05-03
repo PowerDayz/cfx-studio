@@ -55,7 +55,29 @@ export const PIN_COLOR: Record<EditorType, string> = {
 
 export function mapNativeType(t: string): EditorType {
 	const s = t.replace(/\s+/g, '').toLowerCase();
-	if (s.endsWith('*') && s !== 'char*') { return 'pointer'; }
+	// FiveM signatures use `Type*` for handle out-params (e.g.
+	// DeleteVehicle takes `Vehicle*`). At the Lua level these are still
+	// just integer handles — collapse the pointer suffix so wiring
+	// matches `GetVehiclePedIsIn(): Vehicle` to `DeleteVehicle(Vehicle*)`.
+	// `char*` is a true string and stays special-cased.
+	const stripped = s.endsWith('*') ? s.slice(0, -1) : s;
+	if (s.endsWith('*') && s !== 'char*') {
+		switch (stripped) {
+			case 'vehicle': return 'vehicle';
+			case 'ped': return 'ped';
+			case 'object': return 'object';
+			case 'entity': return 'entity';
+			case 'blip': return 'blip';
+			case 'player': return 'player';
+			case 'hash': return 'hash';
+			case 'int':
+			case 'long': return 'integer';
+			case 'float':
+			case 'double': return 'number';
+			case 'bool': return 'boolean';
+			default: return 'pointer';
+		}
+	}
 	switch (s) {
 		case 'void': return 'void';
 		case 'bool': return 'boolean';

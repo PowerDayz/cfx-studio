@@ -3,6 +3,7 @@
  *  Licensed under the MIT License.
  *--------------------------------------------------------------------------------------------*/
 
+import './media/consoleView.css';
 import * as dom from '../../../../../base/browser/dom.js';
 import { DomScrollableElement } from '../../../../../base/browser/ui/scrollbar/scrollableElement.js';
 import { ScrollbarVisibility } from '../../../../../base/common/scrollable.js';
@@ -91,6 +92,15 @@ export class ConsoleViewPane extends ViewPane {
 		this.logContainer.style.fontSize = '12px';
 		this.logContainer.style.padding = '4px 8px';
 		this.logContainer.style.whiteSpace = 'pre';
+		// Inner element MUST have a bounded height (matching the
+		// wrapper) so DomScrollableElement.scanDomNode() can compare
+		// clientHeight (visible) vs scrollHeight (content). Without
+		// this, an unconstrained inner grows to fit content,
+		// clientHeight == scrollHeight, no overflow is detected and the
+		// scrollbar never appears.
+		this.logContainer.style.height = '100%';
+		this.logContainer.style.boxSizing = 'border-box';
+		this.logContainer.style.overflow = 'auto';
 		this.logScrollable = this._register(new DomScrollableElement(this.logContainer, {
 			vertical: ScrollbarVisibility.Auto,
 			horizontal: ScrollbarVisibility.Auto,
