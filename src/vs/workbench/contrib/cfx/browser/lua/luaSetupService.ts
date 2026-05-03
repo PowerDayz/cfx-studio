@@ -148,7 +148,7 @@ class RegenerateNativesAction extends Action2 {
 		super({
 			id: RegenerateNativesAction.ID,
 			title: localize2('cfx.lua.regenerate', 'Cfx: Regenerate Lua Natives'),
-			category: localize('cfx.category', 'Cfx Studio'),
+			category: localize2('cfx.category', 'Cfx Studio'),
 			f1: true,
 		});
 	}

@@ -21,7 +21,7 @@ import {
 	collectAllEnsures,
 	findExecChain,
 	type ServerCfgDoc,
-} from '../../_shared/server-cfg/index.js';
+} from '../../_shared/server-cfg/dist/index.js';
 
 /**
  * Workbench-side server.cfg orchestrator. Reads cfg files via IFileService,
@@ -153,7 +153,7 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 			// Conservative: any file change in the workspace might be a
 			// cfg in the exec chain. Fire onDidChange and let consumers
 			// decide whether to recompute.
-			if (e.affects(root) || e.changes.some((c) => c.resource.path.endsWith('.cfg'))) {
+			if (e.affects(root) || [...e.rawAdded, ...e.rawUpdated, ...e.rawDeleted].some((u) => u.path.endsWith('.cfg'))) {
 				this._onDidChange.fire();
 			}
 		}));

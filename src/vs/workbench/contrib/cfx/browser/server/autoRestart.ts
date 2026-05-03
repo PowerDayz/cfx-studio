@@ -42,9 +42,9 @@ class AutoRestartContribution extends Disposable implements IWorkbenchContributi
 		this._register(fileService.onDidFilesChange((e) => {
 			if (!this.isEnabled()) return;
 			if (this.fxServer.state !== 'running') return;
-			for (const change of e.changes) {
-				if (!isWatchedFile(change.resource)) continue;
-				const resource = this.findOwningResource(change.resource);
+			for (const uri of [...e.rawAdded, ...e.rawUpdated]) {
+				if (!isWatchedFile(uri)) continue;
+				const resource = this.findOwningResource(uri);
 				if (!resource) continue;
 				if (resource.runtimeState !== 'running') continue;
 				this.scheduleRestart(resource.name);
