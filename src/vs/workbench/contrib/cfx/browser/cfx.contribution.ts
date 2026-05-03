@@ -19,6 +19,16 @@ import '../common/settings.js';
 // Side-effect import: registers IGameModeService as a singleton.
 import './gameMode/gameModeService.js';
 
+// Side-effect imports: resources subsystem (Phase B). Registers
+// IServerCfgService and IResourceDiscoveryService singletons, plus the
+// Cfx view container in the activity bar with the Resources view inside.
+import './resources/serverCfgServiceImpl.js';
+import './resources/resourceDiscoveryService.js';
+import './resources/resourcesViewContainer.js';
+
+import { registerResourceActions } from './resources/resourcesActions.js';
+registerResourceActions();
+
 /**
  * Top-level Cfx Studio contribution. The skeleton patch (0015) registers the
  * lifecycle hook only; subsequent patches plug feature services into it
