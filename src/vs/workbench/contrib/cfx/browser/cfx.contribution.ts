@@ -54,6 +54,12 @@ registerScaffoldActions();
 import { registerLuaSetupContribution } from './lua/luaSetupService.js';
 registerLuaSetupContribution();
 
+// Natives reference subsystem (Phase E completion). Registers
+// INativesService + the secondary sidebar view container opened via
+// cfx.natives.show.
+import './natives/nativesService.js';
+import './natives/nativesViewContainer.js';
+
 // .fxgraph editor association (Phase F). The full Blueprint-style
 // React-Flow webview ships as a follow-up patch; this patch installs
 // the file-type association so the IDE knows to treat .fxgraph files

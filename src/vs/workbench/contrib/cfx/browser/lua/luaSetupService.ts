@@ -7,11 +7,13 @@ import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { joinPath } from '../../../../../base/common/resources.js';
 import { VSBuffer } from '../../../../../base/common/buffer.js';
+import { FileAccess } from '../../../../../base/common/network.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import {
@@ -21,6 +23,7 @@ import {
 } from '../../../../common/contributions.js';
 import { LifecyclePhase } from '../../../../services/lifecycle/common/lifecycle.js';
 import { GameMode, IGameModeService } from '../../common/gameMode.js';
+import { emitNativesLua, nativesJsonForMode } from './nativesEmitter.js';
 
 /**
  * Lua language support setup. Writes per-workspace `.luarc.json` and
@@ -41,6 +44,7 @@ class LuaSetupContribution extends Disposable implements IWorkbenchContribution 
 		@IWorkspaceContextService private readonly workspaceService: IWorkspaceContextService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IGameModeService private readonly gameModeService: IGameModeService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 
@@ -81,29 +85,35 @@ class LuaSetupContribution extends Disposable implements IWorkbenchContribution 
 	}
 
 	private async writeNatives(folderUri: URI, mode: GameMode): Promise<void> {
-		// Stub natives file. Full emission (one stub function per native
-		// with @param / @return annotations) lands in a follow-up patch
-		// alongside sumneko/lua-language-server bootstrap. This file
-		// declares enough globals to silence undefined-global on common
-		// FiveM/RedM natives so users get a reasonable baseline.
 		const cfxDir = joinPath(folderUri, '.cfx');
 		try {
 			await this.fileService.createFolder(cfxDir);
 		} catch {
 			// directory may already exist
 		}
-		const nativesUri = joinPath(cfxDir, 'cfx-natives.lua');
-		const text = mode === 'redm' ? this.redmStub() : this.fiveMStub();
-		await this.fileService.writeFile(nativesUri, VSBuffer.fromString(text));
+		const destFile = joinPath(cfxDir, 'cfx-natives.lua');
+
+		// _shared/natives-data lives at a fixed offset relative to this
+		// compiled JS file (out/vs/workbench/contrib/cfx/...). Resolve via
+		// FileAccess so the path works for both dev and packaged builds.
+		const sharedDataDir = FileAccess.asFileUri('vs/workbench/contrib/cfx/_shared/natives-data');
+		const jsonFile = nativesJsonForMode(sharedDataDir, mode);
+
+		try {
+			await emitNativesLua(this.fileService, destFile, jsonFile, mode);
+			this.logService.info(`[cfx] natives emitted to ${destFile.fsPath} (mode=${mode})`);
+		} catch (err) {
+			this.logService.warn(`[cfx] full natives emission failed (${String(err)}); falling back to minimal stub.`);
+			const fallback = mode === 'redm' ? this.redmStub() : this.fiveMStub();
+			await this.fileService.writeFile(destFile, VSBuffer.fromString(fallback));
+		}
 	}
 
 	private fiveMStub(): string {
 		return [
-			`-- Cfx Studio: FiveM (gta5) natives stub.`,
-			`-- This file is regenerated whenever the workspace game mode changes.`,
-			`-- A full natives emitter lands in a follow-up patch. The shape below`,
-			`-- is intentionally minimal so language servers don't error on common`,
-			`-- FiveM globals while the full emitter ships.`,
+			`-- Cfx Studio: FiveM (gta5) natives fallback stub.`,
+			`-- The full per-native emitter failed to load shared/natives-data/natives-fivem.json.`,
+			`-- Run \`node ide/build/fetch-natives.mjs --game fivem\` and rebuild to populate.`,
 			``,
 			`---@diagnostic disable: lowercase-global`,
 			``,
@@ -112,31 +122,16 @@ class LuaSetupContribution extends Disposable implements IWorkbenchContribution 
 			`---@field y number`,
 			`---@field z number`,
 			``,
-			`---@param model number|string`,
-			`---@return boolean`,
-			`function HasModelLoaded(model) end`,
-			``,
-			`---@param model number|string`,
-			`function RequestModel(model) end`,
-			``,
-			`---@return number ped`,
-			`function PlayerPedId() end`,
-			``,
-			`---@param coords Vector3`,
-			`---@param heading? number`,
-			`function SetEntityCoords(entity, coords, heading) end`,
-			``,
 		].join('\n');
 	}
 
 	private redmStub(): string {
 		return [
-			`-- Cfx Studio: RedM (rdr3) natives stub.`,
-			`---@diagnostic disable: lowercase-global`,
+			`-- Cfx Studio: RedM (rdr3) natives fallback stub.`,
+			`-- The full per-native emitter failed to load shared/natives-data/natives-redm.json.`,
+			`-- Run \`node ide/build/fetch-natives.mjs --game redm\` and rebuild to populate.`,
 			``,
-			`---@param player number`,
-			`---@return number ped`,
-			`function GetPlayerPed(player) end`,
+			`---@diagnostic disable: lowercase-global`,
 			``,
 		].join('\n');
 	}

@@ -12,6 +12,7 @@ import { INotificationService } from '../../../../../platform/notification/commo
 import { ConfigurationTarget } from '../../../../../platform/configuration/common/configuration.js';
 import { GameMode, IGameModeService } from '../../common/gameMode.js';
 import { IResourceDiscoveryService } from '../../common/resources.js';
+import { IViewsService } from '../../../../services/views/common/viewsService.js';
 
 const CATEGORY = localize2('cfx.category', 'Cfx Studio');
 
@@ -71,11 +72,9 @@ class ShowNativesReferenceAction extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const notification = accessor.get(INotificationService);
-		// Natives reference tree ships as a follow-up patch. The data
-		// already lives in `_shared/natives-data/natives-fivem.json`; the
-		// view container + tree is what's pending.
-		notification.info(localize('cfx.natives.show.notReady', 'Cfx Natives Reference ships in a follow-up patch.'));
+		const { CFX_NATIVES_CONTAINER_ID } = await import('../natives/nativesViewContainer.js');
+		const viewsService = accessor.get(IViewsService);
+		await viewsService.openViewContainer(CFX_NATIVES_CONTAINER_ID, true);
 	}
 }
 
