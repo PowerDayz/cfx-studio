@@ -3,8 +3,8 @@
  *  Licensed under the MIT License.
  *--------------------------------------------------------------------------------------------*/
 
-import './media/consoleView.css';
 import * as dom from '../../../../../base/browser/dom.js';
+import { mainWindow } from '../../../../../base/browser/window.js';
 import { DomScrollableElement } from '../../../../../base/browser/ui/scrollbar/scrollableElement.js';
 import { ScrollbarVisibility } from '../../../../../base/common/scrollable.js';
 import { localize2 } from '../../../../../nls.js';
@@ -33,6 +33,34 @@ import { stripAnsi } from '../../common/logParser.js';
  *
  * Renderer is a plain DOM list — no xterm — sufficient for this scope.
  */
+/**
+ * The inner log element uses native overflow:auto so DomScrollableElement
+ * can drive scrollTop on it. Browsers would normally render their own
+ * scrollbar over that — these rules hide it so only the themed scrollbar
+ * (drawn by DomScrollableElement) shows. Kept as an injected <style>
+ * rather than an `import './media/foo.css'` because vscode's compile
+ * pipeline doesn't pick up CSS imports added by new contribs without an
+ * explicit rule, and the import-via-ESM fallback fails on MIME type.
+ */
+let consoleScrollbarStyleInstalled = false;
+function ensureConsoleScrollbarStyle(): void {
+	if (consoleScrollbarStyleInstalled) { return; }
+	consoleScrollbarStyleInstalled = true;
+	const style = mainWindow.document.createElement('style');
+	style.textContent = [
+		'.cfx-console-log {',
+		'\tscrollbar-width: none;',
+		'\t-ms-overflow-style: none;',
+		'}',
+		'.cfx-console-log::-webkit-scrollbar {',
+		'\tdisplay: none;',
+		'\twidth: 0;',
+		'\theight: 0;',
+		'}',
+	].join('\n');
+	mainWindow.document.head.appendChild(style);
+}
+
 export class ConsoleViewPane extends ViewPane {
 	static readonly ID: string = 'cfx.view.console';
 	static readonly NAME: ILocalizedString = localize2('cfx.console.title', 'Cfx Console');
@@ -73,6 +101,7 @@ export class ConsoleViewPane extends ViewPane {
 
 	protected override renderBody(container: HTMLElement): void {
 		super.renderBody(container);
+		ensureConsoleScrollbarStyle();
 		container.classList.add('cfx-console-view');
 		container.style.display = 'flex';
 		container.style.flexDirection = 'column';
