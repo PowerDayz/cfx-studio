@@ -227,6 +227,10 @@ function typescriptScaffold(input: ScaffoldInput): ScaffoldOutput {
 function visualScaffold(input: ScaffoldInput): ScaffoldOutput {
 	const game = input.gameMode === 'redm' ? 'rdr3' : 'gta5';
 
+	// Field names must match the GraphDoc schema in shared/visual/dist/doc.d.ts:
+	// `event` (not `eventName`) and `pos` (not `position`). The scaffold ships
+	// with the canonical EVENT_CATALOG name `project_started`, which the
+	// codegen lowers to `onClientResourceStart` in Lua.
 	const emptyGraph = JSON.stringify(
 		{
 			version: 1,
@@ -235,9 +239,9 @@ function visualScaffold(input: ScaffoldInput): ScaffoldOutput {
 				{
 					id: 'event-1',
 					kind: 'event',
-					eventName: 'onClientResourceStart',
-					position: { x: 80, y: 100 },
-					outExec: [{ id: 'next', name: 'Next' }],
+					event: 'project_started',
+					pos: { x: 80, y: 100 },
+					outExec: [{ id: 'next', name: 'next' }],
 				},
 			],
 			edges: [],

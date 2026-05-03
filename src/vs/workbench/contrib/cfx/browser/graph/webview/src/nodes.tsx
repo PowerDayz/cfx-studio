@@ -1,0 +1,292 @@
+import React from 'react';
+import { Handle, Position, type NodeProps } from '@xyflow/react';
+
+import type { BNode, PinDef } from '../../../../_shared/visual/dist/doc.js';
+import type { EditorType } from '../../../../_shared/visual/dist/types.js';
+import { InlineValueEditor } from './InlineEditor.js';
+
+interface FlowData extends Record<string, unknown> {
+	bnode: BNode;
+	onPatch: (next: BNode) => void;
+}
+
+const PIN_COLOR: Record<string, string> = {
+	void: '#5b6573',
+	any: '#e6eaf0',
+	boolean: '#ff6a6a',
+	number: '#5aa9ff',
+	integer: '#5aa9ff',
+	string: '#e15bd8',
+	vector3: '#f5c451',
+	hash: '#5fe0d4',
+	entity: '#5ee0a8',
+	ped: '#5ee0a8',
+	vehicle: '#7ad8a8',
+	object: '#a8d878',
+	blip: '#ff8a3d',
+	player: '#5ee0a8',
+	pointer: '#98a2b3',
+};
+
+export const BlueprintNode: React.FC<NodeProps<{ data: FlowData; type: 'blueprint' }>> = ({ data }) => {
+	const n = data.bnode;
+	switch (n.kind) {
+		case 'event': return <EventNode data={data} />;
+		case 'exec-call': return <ExecCallNode data={data} />;
+		case 'control': return <ControlNode data={data} />;
+		case 'pure': return <PureNode data={data} />;
+		case 'literal': return <LiteralNode data={data} />;
+		case 'var-get': return <VarGetNode data={data} />;
+		case 'var-set': return <VarSetNode data={data} />;
+		case 'comment': return <CommentNode data={data} />;
+	}
+};
+
+export const NODE_TYPES = { blueprint: BlueprintNode };
+
+const EventNode: React.FC<{ data: FlowData }> = ({ data }) => {
+	const n = data.bnode as Extract<BNode, { kind: 'event' }>;
+	const out = n.outExec[0];
+	return (
+		<div className="bnode kind-event">
+			<div className="header">
+				<span>⚡ on {n.event}</span>
+			</div>
+			<div className="pin-row exec">
+				<div />
+				<div className="pin right">
+					<span>next</span>
+					<ExecHandle id={out?.id ?? 'next'} type="source" />
+				</div>
+			</div>
+		</div>
+	);
+};
+
+const ExecCallNode: React.FC<{ data: FlowData }> = ({ data }) => {
+	const n = data.bnode as Extract<BNode, { kind: 'exec-call' }>;
+	const title = n.callee === 'invoke_native' && n.nativeName ? n.nativeName : n.callee;
+	return (
+		<div className="bnode kind-exec-call">
+			<div className="header">
+				<span>{title}</span>
+				{n.nativeHash && <span style={{ fontSize: 10, opacity: 0.7 }}>{n.nativeHash}</span>}
+			</div>
+			<div className="pin-row exec">
+				<div className="pin left">
+					<ExecHandle id={n.inExec ?? 'in'} type="target" />
+					<span>in</span>
+				</div>
+				<div className="pin right">
+					<span>next</span>
+					<ExecHandle id={n.outExec[0]?.id ?? 'next'} type="source" />
+				</div>
+			</div>
+			{n.argPins.map((p) => (
+				<PinRow key={p.id} pin={p} side="input" node={n} onPatch={data.onPatch} />
+			))}
+			{n.resultPin && (
+				<div className="pin-row">
+					<div />
+					<div className="pin right">
+						<span>{n.resultPin.name}</span>
+						<ValueHandle id={n.resultPin.id} type="source" pinType={n.resultPin.type} />
+					</div>
+				</div>
+			)}
+		</div>
+	);
+};
+
+const ControlNode: React.FC<{ data: FlowData }> = ({ data }) => {
+	const n = data.bnode as Extract<BNode, { kind: 'control' }>;
+	return (
+		<div className="bnode kind-control">
+			<div className="header">
+				<span>{n.op}</span>
+			</div>
+			<div className="pin-row exec">
+				<div className="pin left">
+					<ExecHandle id={n.inExec} type="target" />
+					<span>in</span>
+				</div>
+				<div className="pin right">
+					{n.outExecBranches.map((b) => (
+						<div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+							<span>{b.name}</span>
+							<ExecHandle id={b.id} type="source" />
+						</div>
+					))}
+				</div>
+			</div>
+			{n.argPins.map((p) => (
+				<PinRow key={p.id} pin={p} side="input" node={n} onPatch={data.onPatch} />
+			))}
+		</div>
+	);
+};
+
+const PureNode: React.FC<{ data: FlowData }> = ({ data }) => {
+	const n = data.bnode as Extract<BNode, { kind: 'pure' }>;
+	const title = n.callee === 'invoke_native' && n.nativeName ? n.nativeName : n.callee;
+	return (
+		<div className="bnode kind-pure">
+			<div className="header"><span>{title}</span></div>
+			{n.argPins.map((p) => (
+				<PinRow key={p.id} pin={p} side="input" node={n} onPatch={data.onPatch} />
+			))}
+			<div className="pin-row">
+				<div />
+				<div className="pin right">
+					<span>{n.resultPin.name}</span>
+					<ValueHandle id={n.resultPin.id} type="source" pinType={n.resultPin.type} />
+				</div>
+			</div>
+		</div>
+	);
+};
+
+const LiteralNode: React.FC<{ data: FlowData }> = ({ data }) => {
+	const n = data.bnode as Extract<BNode, { kind: 'literal' }>;
+	return (
+		<div className="bnode kind-literal">
+			<div className="header"><span>{n.valueType} literal</span></div>
+			<div className="pin-row">
+				<div className="pin left" style={{ paddingLeft: 12 }}>
+					<InlineValueEditor
+						type={n.valueType}
+						value={n.value}
+						onChange={(v) => data.onPatch({ ...n, value: v })}
+					/>
+				</div>
+				<div className="pin right">
+					<span>value</span>
+					<ValueHandle id={n.resultPin.id} type="source" pinType={n.valueType} />
+				</div>
+			</div>
+		</div>
+	);
+};
+
+const VarGetNode: React.FC<{ data: FlowData }> = ({ data }) => {
+	const n = data.bnode as Extract<BNode, { kind: 'var-get' }>;
+	return (
+		<div className="bnode kind-var-get">
+			<div className="header"><span>get {n.name}</span></div>
+			<div className="pin-row">
+				<div />
+				<div className="pin right">
+					<span>{n.name}</span>
+					<ValueHandle id="result" type="source" pinType={n.resultPin.type} />
+				</div>
+			</div>
+		</div>
+	);
+};
+
+const VarSetNode: React.FC<{ data: FlowData }> = ({ data }) => {
+	const n = data.bnode as Extract<BNode, { kind: 'var-set' }>;
+	return (
+		<div className="bnode kind-var-set">
+			<div className="header"><span>set {n.name}</span></div>
+			<div className="pin-row exec">
+				<div className="pin left">
+					<ExecHandle id={n.inExec ?? 'in'} type="target" />
+					<span>in</span>
+				</div>
+				<div className="pin right">
+					<span>next</span>
+					<ExecHandle id={n.outExec[0]?.id ?? 'next'} type="source" />
+				</div>
+			</div>
+			{n.argPins.map((p) => (
+				<PinRow key={p.id} pin={p} side="input" node={n} onPatch={data.onPatch} />
+			))}
+		</div>
+	);
+};
+
+const CommentNode: React.FC<{ data: FlowData }> = ({ data }) => {
+	const n = data.bnode as Extract<BNode, { kind: 'comment' }>;
+	return (
+		<div className="bnode" style={{ background: 'rgba(255, 200, 80, 0.1)', borderColor: 'rgba(255, 200, 80, 0.4)', minWidth: n.size?.w ?? 200 }}>
+			<div className="header" style={{ background: 'transparent', color: 'inherit' }}>
+				<span>📝 comment</span>
+			</div>
+			<div style={{ padding: 8, fontSize: 12, whiteSpace: 'pre-wrap' }}>{n.text}</div>
+		</div>
+	);
+};
+
+interface PinRowProps {
+	pin: PinDef;
+	side: 'input' | 'output';
+	node: BNode;
+	onPatch: (next: BNode) => void;
+}
+
+const PinRow: React.FC<PinRowProps> = ({ pin, side, node, onPatch }) => {
+	if (side === 'input') {
+		return (
+			<div className="pin-row">
+				<div className="pin left">
+					<ValueHandle id={pin.id} type="target" pinType={pin.type} />
+					<span>{pin.name}</span>
+					<InlineValueEditor
+						type={pin.type}
+						value={pin.defaultValue}
+						onChange={(v) => {
+							const argPins = (node as { argPins?: PinDef[] }).argPins;
+							if (!argPins) return;
+							const next = { ...node, argPins: argPins.map((p) => (p.id === pin.id ? { ...p, defaultValue: v } : p)) } as BNode;
+							onPatch(next);
+						}}
+					/>
+				</div>
+				<div />
+			</div>
+		);
+	}
+	return (
+		<div className="pin-row">
+			<div />
+			<div className="pin right">
+				<span>{pin.name}</span>
+				<ValueHandle id={pin.id} type="source" pinType={pin.type} />
+			</div>
+		</div>
+	);
+};
+
+const ExecHandle: React.FC<{ id: string; type: 'source' | 'target' }> = ({ id, type }) => (
+	<Handle
+		id={id}
+		type={type}
+		position={type === 'source' ? Position.Right : Position.Left}
+		style={{
+			width: 0,
+			height: 0,
+			background: 'transparent',
+			border: 'none',
+			borderTop: '6px solid transparent',
+			borderBottom: '6px solid transparent',
+			borderLeft: type === 'source' ? '8px solid #fff' : '0',
+			borderRight: type === 'target' ? '8px solid #fff' : '0',
+			transform: type === 'source' ? 'translate(50%, -50%)' : 'translate(-50%, -50%)',
+		}}
+	/>
+);
+
+const ValueHandle: React.FC<{ id: string; type: 'source' | 'target'; pinType: EditorType }> = ({ id, type, pinType }) => (
+	<Handle
+		id={id}
+		type={type}
+		position={type === 'source' ? Position.Right : Position.Left}
+		style={{
+			width: 10,
+			height: 10,
+			background: PIN_COLOR[pinType] ?? '#888',
+			border: '1px solid var(--vscode-panel-border, #444)',
+		}}
+	/>
+);
