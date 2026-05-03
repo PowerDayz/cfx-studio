@@ -46,11 +46,15 @@ export const NODE_TYPES = { blueprint: BlueprintNode };
 
 const EventNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'event' }>;
+	// Backward-compat: pre-0033 scaffolds shipped `eventName` instead of
+	// the canonical `event` field. Read the legacy field if the canonical
+	// one is missing so the node title isn't blank for older files.
+	const eventName = n.event || (n as { eventName?: string }).eventName || '???';
 	const out = n.outExec[0];
 	return (
 		<div className="bnode kind-event">
 			<div className="header">
-				<span>⚡ on {n.event}</span>
+				<span>⚡ on {eventName}</span>
 			</div>
 			<div className="pin-row exec">
 				<div />
@@ -59,6 +63,9 @@ const EventNode: React.FC<{ data: FlowData }> = ({ data }) => {
 					<ExecHandle id={out?.id ?? 'next'} type="source" />
 				</div>
 			</div>
+			{(n.outValuePins ?? []).map((p) => (
+				<PinRow key={p.id} pin={p} side="output" />
+			))}
 		</div>
 	);
 };
@@ -83,7 +90,7 @@ const ExecCallNode: React.FC<{ data: FlowData }> = ({ data }) => {
 				</div>
 			</div>
 			{n.argPins.map((p) => (
-				<PinRow key={p.id} pin={p} side="input" node={n} onPatch={data.onPatch} />
+				<PinRow key={p.id} pin={p} side="input" />
 			))}
 			{n.resultPin && (
 				<div className="pin-row">
@@ -120,7 +127,7 @@ const ControlNode: React.FC<{ data: FlowData }> = ({ data }) => {
 				</div>
 			</div>
 			{n.argPins.map((p) => (
-				<PinRow key={p.id} pin={p} side="input" node={n} onPatch={data.onPatch} />
+				<PinRow key={p.id} pin={p} side="input" />
 			))}
 		</div>
 	);
@@ -133,7 +140,7 @@ const PureNode: React.FC<{ data: FlowData }> = ({ data }) => {
 		<div className="bnode kind-pure">
 			<div className="header"><span>{title}</span></div>
 			{n.argPins.map((p) => (
-				<PinRow key={p.id} pin={p} side="input" node={n} onPatch={data.onPatch} />
+				<PinRow key={p.id} pin={p} side="input" />
 			))}
 			<div className="pin-row">
 				<div />
@@ -200,7 +207,7 @@ const VarSetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 				</div>
 			</div>
 			{n.argPins.map((p) => (
-				<PinRow key={p.id} pin={p} side="input" node={n} onPatch={data.onPatch} />
+				<PinRow key={p.id} pin={p} side="input" />
 			))}
 		</div>
 	);
@@ -221,27 +228,19 @@ const CommentNode: React.FC<{ data: FlowData }> = ({ data }) => {
 interface PinRowProps {
 	pin: PinDef;
 	side: 'input' | 'output';
-	node: BNode;
-	onPatch: (next: BNode) => void;
 }
 
-const PinRow: React.FC<PinRowProps> = ({ pin, side, node, onPatch }) => {
+// Input pins are pure connection points — no inline default-value editor.
+// To supply a literal value, the user adds a Literal node and connects
+// its output pin to this input. Literal nodes ARE the way to author
+// constants; arg pins on call/control nodes are connection sockets only.
+const PinRow: React.FC<PinRowProps> = ({ pin, side }) => {
 	if (side === 'input') {
 		return (
 			<div className="pin-row">
 				<div className="pin left">
 					<ValueHandle id={pin.id} type="target" pinType={pin.type} />
 					<span>{pin.name}</span>
-					<InlineValueEditor
-						type={pin.type}
-						value={pin.defaultValue}
-						onChange={(v) => {
-							const argPins = (node as { argPins?: PinDef[] }).argPins;
-							if (!argPins) return;
-							const next = { ...node, argPins: argPins.map((p) => (p.id === pin.id ? { ...p, defaultValue: v } : p)) } as BNode;
-							onPatch(next);
-						}}
-					/>
 				</div>
 				<div />
 			</div>

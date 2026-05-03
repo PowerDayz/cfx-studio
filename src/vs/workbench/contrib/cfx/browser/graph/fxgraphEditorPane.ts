@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Dimension } from '../../../../../base/browser/dom.js';
+import { VSBuffer } from '../../../../../base/common/buffer.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { FileAccess } from '../../../../../base/common/network.js';
@@ -24,8 +25,11 @@ import { IEditorGroup } from '../../../../services/editor/common/editorGroupsSer
 import { IOverlayWebview, IWebviewService, WebviewContentPurpose } from '../../../webview/browser/webview.js';
 import { asWebviewUri, webviewGenericCspSource } from '../../../webview/common/webview.js';
 import { IGameModeService } from '../../common/gameMode.js';
+import { INativesService } from '../../common/natives.js';
 import type { HostToWebviewMessage, WebviewToHostMessage } from '../../common/fxgraphMessages.js';
 import { FxGraphEditorInput } from './fxgraphEditorInput.js';
+import { generateLua } from '../../_shared/visual/dist/codegen.js';
+import type { GraphDoc } from '../../_shared/visual/dist/doc.js';
 
 const MEDIA_DIR_REL = 'vs/workbench/contrib/cfx/browser/graph/media/fxgraph';
 
@@ -50,6 +54,9 @@ export class FxGraphEditorPane extends EditorPane {
 	private readonly webviewListeners = this._register(new DisposableStore());
 	private webviewReady = false;
 	private pendingInit: HostToWebviewMessage | undefined;
+	private currentResource: import('../../../../../base/common/uri.js').URI | undefined;
+	private saveTimer: ReturnType<typeof setTimeout> | undefined;
+	private pendingSaveDoc: unknown;
 
 	constructor(
 		group: IEditorGroup,
@@ -61,6 +68,7 @@ export class FxGraphEditorPane extends EditorPane {
 		@IGameModeService private readonly gameModeService: IGameModeService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@ILogService private readonly logService: ILogService,
+		@INativesService private readonly nativesService: INativesService,
 	) {
 		super(FxGraphEditorPane.ID, group, telemetryService, themeService, storageService);
 	}
@@ -79,6 +87,8 @@ export class FxGraphEditorPane extends EditorPane {
 			this.logService.warn(`[cfx] FxGraphEditorPane received non-FxGraph input ${input.typeId}`);
 			return;
 		}
+
+		this.currentResource = input.resource;
 
 		try {
 			this.ensureWebview();
@@ -114,7 +124,16 @@ export class FxGraphEditorPane extends EditorPane {
 	}
 
 	override clearInput(): void {
+		// Flush any pending save before tearing the webview down so the
+		// user doesn't lose the last edit when they switch tabs.
+		if (this.saveTimer) {
+			clearTimeout(this.saveTimer);
+			this.saveTimer = undefined;
+			void this.flushSave();
+		}
 		this.pendingInit = undefined;
+		this.pendingSaveDoc = undefined;
+		this.currentResource = undefined;
 		this.webviewReady = false;
 		this.webviewMD.value?.release(this);
 		this.webviewMD.clear();
@@ -189,10 +208,18 @@ export class FxGraphEditorPane extends EditorPane {
 				}
 				break;
 			case 'change':
-				// Save round-trip lands in a follow-up patch. For now the
-				// in-memory edit lives in the webview only; users can run
-				// `Cfx: Compile Active .fxgraph to Lua` to flush via the
-				// existing JSON file (after editing as text).
+				// Persist the doc to disk + regenerate the sibling .lua.
+				// Debounced so a sequence of rapid edits (drag, multi-pin
+				// connect) collapses into one filesystem write.
+				this.pendingSaveDoc = msg.doc;
+				if (this.saveTimer) clearTimeout(this.saveTimer);
+				this.saveTimer = setTimeout(() => {
+					this.saveTimer = undefined;
+					void this.flushSave();
+				}, 300);
+				break;
+			case 'request-native-search':
+				this.handleNativeSearch(msg.query);
 				break;
 			case 'host-error':
 				this.logService.error(`[cfx] fxgraph webview error: ${msg.message}`);
@@ -201,6 +228,43 @@ export class FxGraphEditorPane extends EditorPane {
 				this.logService.info(`[cfx] fxgraph webview: ${msg.message}`);
 				break;
 		}
+	}
+
+	private async flushSave(): Promise<void> {
+		const uri = this.currentResource;
+		const doc = this.pendingSaveDoc;
+		this.pendingSaveDoc = undefined;
+		if (!uri || doc === undefined) return;
+		try {
+			// Persist the canonical .fxgraph JSON.
+			const json = JSON.stringify(doc, null, 2) + '\n';
+			await this.fileService.writeFile(uri, VSBuffer.fromString(json));
+
+			// Regenerate the sibling .lua so the runtime sees the change
+			// without the user manually running cfx.fxgraph.compile. We
+			// inline the codegen here (rather than dispatch the command)
+			// so a tab-switch race doesn't compile the wrong file.
+			const result = generateLua(doc as GraphDoc, { source: uri.path.split('/').pop() ?? '<fxgraph>' });
+			const luaUri = uri.with({ path: uri.path.replace(/\.fxgraph$/, '.lua') });
+			await this.fileService.writeFile(luaUri, VSBuffer.fromString(result.source));
+			if (result.errors.length > 0) {
+				this.logService.warn(`[cfx] fxgraph autosave: ${result.errors.length} codegen warning(s)`);
+			}
+		} catch (err) {
+			this.logService.error(`[cfx] failed to autosave ${uri.toString()}`, err);
+		}
+	}
+
+	private handleNativeSearch(query: string): void {
+		if (!this.nativesService.isLoaded) return;
+		const results = this.nativesService.search(query, 200).map((n) => ({
+			hash: n.hash,
+			ns: n.ns,
+			name: n.name,
+			params: n.params.map((p) => ({ name: p.name, type: p.type })),
+			results: n.results,
+		}));
+		this.webviewMD.value?.postMessage({ type: 'native-search-result', query, results });
 	}
 }
 

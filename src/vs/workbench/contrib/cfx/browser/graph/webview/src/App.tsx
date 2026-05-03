@@ -109,15 +109,19 @@ function EditorInner() {
 	const [edges, setEdges, onEdgesChangeRaw] = useEdgesState<RFEdge>([]);
 
 	// Sync doc → react-flow node state. Keep in-progress drag positions
-	// so a node doesn't snap back to its persisted pos mid-drag.
+	// so a node doesn't snap back to its persisted pos mid-drag. Also
+	// reads the legacy `position` field as a fallback for pre-0033
+	// scaffolds that wrote it instead of `pos`.
 	useEffect(() => {
 		setNodes((current) =>
 			doc.nodes.map((bn) => {
 				const prior = current.find((n) => n.id === bn.id);
+				const legacyPos = (bn as { position?: { x: number; y: number } }).position;
+				const persistedPos = bn.pos ?? legacyPos ?? { x: 0, y: 0 };
 				return {
 					id: bn.id,
 					type: 'blueprint',
-					position: prior?.dragging && prior.position ? prior.position : (bn.pos ?? { x: 0, y: 0 }),
+					position: prior?.dragging && prior.position ? prior.position : persistedPos,
 					data: { bnode: bn, onPatch: patchNode },
 					deletable: bn.kind !== 'event' || doc.nodes.filter((n) => n.kind === 'event').length > 1,
 				};
@@ -125,6 +129,9 @@ function EditorInner() {
 		);
 	}, [doc, patchNode, setNodes]);
 
+	// Exec edges render as animated dashed white "thread of execution"
+	// lines (the deprecated editor's signature look). Value edges use a
+	// solid stroke coloured by their pin type.
 	useEffect(() => {
 		setEdges(
 			doc.edges.map((e) => ({
@@ -134,9 +141,10 @@ function EditorInner() {
 				sourceHandle: e.fromPinId,
 				targetHandle: e.kind === 'value' ? (e as ValueEdge).toPinId : 'in',
 				type: e.kind === 'exec' ? 'smoothstep' : 'default',
+				animated: e.kind === 'exec',
 				data: { kind: e.kind },
 				style: e.kind === 'exec'
-					? { stroke: '#fff', strokeWidth: 2 }
+					? { stroke: '#fff', strokeWidth: 2, strokeDasharray: '6 6' }
 					: { stroke: pinColorOf(e, doc), strokeWidth: 1.5 },
 			})),
 		);
@@ -312,6 +320,8 @@ function pinKindOf(node: BNode, pinId: string, dir: 'input' | 'output'): { kind:
 		if (dir === 'output' && (pinId === 'next' || node.outExec.some((p) => p.id === pinId))) {
 			return { kind: 'exec' };
 		}
+		const out = (node.outValuePins ?? []).find((p) => p.id === pinId);
+		if (dir === 'output' && out) return { kind: 'value', type: out.type };
 	}
 	if (node.kind === 'exec-call') {
 		if (dir === 'input' && pinId === (node.inExec ?? 'in')) return { kind: 'exec' };
@@ -354,6 +364,7 @@ function pinColorOf(edge: BEdge, doc: GraphDoc): string {
 	let pin: PinDef | undefined;
 	if (from.kind === 'pure' || from.kind === 'literal' || from.kind === 'var-get') pin = from.resultPin;
 	if (from.kind === 'exec-call') pin = from.resultPin;
+	if (from.kind === 'event') pin = (from.outValuePins ?? []).find((p) => p.id === ve.fromPinId);
 	if (!pin) return '#888';
 	return PIN_COLOR_MAP[pin.type] ?? '#888';
 }
