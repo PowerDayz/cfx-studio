@@ -13,10 +13,19 @@ import {
 	nodeWhile,
 	nodeLiteral,
 	nodeEvent,
+	nodeVarGet,
+	nodeVarSet,
 } from '../../../../_shared/visual/dist/sig-to-node.js';
-import { STDLIB, RUNTIME_BUILTINS, type StdlibSig } from '../../../../_shared/visual/dist/stdlib.js';
+import { STDLIB, RUNTIME_BUILTINS, findStdlib, type StdlibSig } from '../../../../_shared/visual/dist/stdlib.js';
+import { nextNodeId } from '../../../../_shared/visual/dist/doc.js';
 import { eventsForScope } from '../../../../_shared/visual/dist/events.js';
 import { vscode } from './messages';
+
+// vec3_x/y/z still exist in the stdlib but the editor now wires
+// vector3 → number via per-edge component access (`(v).x` in the
+// generated Lua), so the explicit pseudo-nodes are seldom needed and
+// hidden from the palette. The list below filters them out.
+const HIDDEN_STDLIB_NAMES = new Set(['vec3_x', 'vec3_y', 'vec3_z']);
 
 interface ScreenPos { x: number; y: number }
 interface FlowPos { x: number; y: number }
@@ -29,11 +38,17 @@ interface SeedInfo {
 	pinId: string;
 }
 
+interface VarDecl {
+	name: string;
+	type: EditorType;
+}
+
 interface Props {
 	screenPos: ScreenPos;
 	flowPos: FlowPos;
 	scope: GraphScope;
 	seed?: SeedInfo;
+	variables?: ReadonlyArray<VarDecl>;
 	onPick: (node: BNode) => void;
 	onCancel: () => void;
 }
@@ -82,7 +97,7 @@ const RECENT_MAX = 10;
  * docs site organisation. Search collapses the sidebar and shows a
  * flat ranked list across all categories.
  */
-export const QuickAddMenu: React.FC<Props> = ({ screenPos, flowPos, scope, seed, onPick, onCancel }) => {
+export const QuickAddMenu: React.FC<Props> = ({ screenPos, flowPos, scope, seed, variables, onPick, onCancel }) => {
 	const [query, setQuery] = useState('');
 	const [selected, setSelected] = useState(0);
 	const [activeSection, setActiveSection] = useState<SectionKey>('events');
@@ -150,11 +165,60 @@ export const QuickAddMenu: React.FC<Props> = ({ screenPos, flowPos, scope, seed,
 		}
 
 		for (const sig of STDLIB) {
+			if (HIDDEN_STDLIB_NAMES.has(sig.name)) continue;
 			out.push(stdlibCandidate(sig, 'stdlib', flowPos));
 		}
 		for (const sig of RUNTIME_BUILTINS) {
 			out.push(stdlibCandidate(sig, 'runtime', flowPos));
 		}
+
+		// Variables declared via the toolbar. Each shows up as a
+		// `get name` (pure value source) and `set name` (statement) pair.
+		for (const v of variables ?? []) {
+			out.push({
+				id: `var:get:${v.name}`,
+				name: `get ${v.name}`,
+				description: `Read variable ${v.name} (${v.type}).`,
+				section: 'literals',
+				build: () => {
+					const node = nodeVarGet(v.name, flowPos);
+					return { ...node, resultPin: { ...node.resultPin, type: v.type } };
+				},
+				inputTypes: [],
+				outputTypes: [{ kind: 'value', type: v.type }],
+			});
+			out.push({
+				id: `var:set:${v.name}`,
+				name: `set ${v.name}`,
+				description: `Assign variable ${v.name} (${v.type}).`,
+				section: 'literals',
+				build: () => {
+					const node = nodeVarSet(v.name, flowPos);
+					return { ...node, argPins: node.argPins.map((p, i) => i === 0 ? { ...p, type: v.type } : p) };
+				},
+				inputTypes: [{ kind: 'exec' }, { kind: 'value', type: v.type }],
+				outputTypes: [{ kind: 'exec' }],
+			});
+		}
+
+		// Comment / sticky-note: free-form documentation block over the
+		// canvas. Lives under "Literals" so it sits near the other
+		// content-only nodes.
+		out.push({
+			id: 'comment',
+			name: 'comment',
+			description: 'Sticky-note / documentation block. Resizable.',
+			section: 'literals',
+			build: () => ({
+				id: nextNodeId('cmt'),
+				kind: 'comment',
+				pos: flowPos,
+				text: '',
+				size: { w: 240, h: 120 },
+			}),
+			inputTypes: [],
+			outputTypes: [],
+		});
 
 		for (const n of natives) {
 			out.push({
@@ -175,12 +239,50 @@ export const QuickAddMenu: React.FC<Props> = ({ screenPos, flowPos, scope, seed,
 		}
 
 		return out;
-	}, [scope, flowPos, natives]);
+	}, [scope, flowPos, natives, variables]);
+
+	// Synthetic "Auto-resolve" candidate when the user dragged from an
+	// INPUT pin into empty canvas — drop the canonical producer for the
+	// type in one click. e.g. Player → PlayerId(), Ped → PlayerPedId(),
+	// Hash → GetHashKey(''), Vector3 / String / etc → Literal of that
+	// type. Inserted at the top of `pool` BEFORE search so Enter on the
+	// empty query commits it immediately.
+	const autoResolveCandidate = useMemo<Candidate | null>(() => {
+		if (!seed || seed.direction !== 'target' || seed.kind !== 'value' || !seed.type) return null;
+		const t = seed.type as EditorType;
+		const sig = pickAutoResolveSig(t);
+		if (sig) {
+			return {
+				id: `auto:${t}`,
+				name: `✨ Auto-resolve as ${t}`,
+				description: `Insert a ${sig.name}() node and wire it.`,
+				section: 'recent',
+				build: () => nodeFromStdlib(sig, flowPos),
+				inputTypes: [],
+				outputTypes: [{ kind: 'value', type: normaliseType(sig.result) }],
+			};
+		}
+		// Fallback: a Literal node for primitive types.
+		const litTypes: EditorType[] = ['string', 'integer', 'number', 'boolean', 'vector3'];
+		if (litTypes.includes(t)) {
+			return {
+				id: `auto:lit:${t}`,
+				name: `✨ Auto-resolve as ${t}`,
+				description: `Insert a ${t} literal you can fill in.`,
+				section: 'recent',
+				build: () => nodeLiteral(t, defaultLiteral(t), flowPos),
+				inputTypes: [],
+				outputTypes: [{ kind: 'value', type: t }],
+			};
+		}
+		return null;
+	}, [seed, flowPos]);
 
 	// Filter pipeline: seed compatibility → search query → ranking.
 	const filtered = useMemo(() => {
 		let pool = candidates;
 		if (seed) pool = pool.filter((c) => seedMatches(c, seed));
+		if (autoResolveCandidate) pool = [autoResolveCandidate, ...pool];
 		const q = query.trim().toLowerCase();
 		if (!q) {
 			// No query: scope to the active section unless the seed is
@@ -422,5 +524,25 @@ function defaultLiteral(t: EditorType): unknown {
 		case 'boolean': return false;
 		case 'vector3': return [0, 0, 0];
 		default: return null;
+	}
+}
+
+/**
+ * Per-type "give me the canonical producer" lookup, sourced from
+ * RUNTIME_BUILTINS (always available, no native catalog lookup
+ * needed). Returns undefined for primitive types — auto-resolve
+ * falls back to a Literal node in that case.
+ */
+function findAnySig(name: string): StdlibSig | undefined {
+	return findStdlib(name) ?? RUNTIME_BUILTINS.find((s) => s.name === name);
+}
+
+function pickAutoResolveSig(t: EditorType): StdlibSig | undefined {
+	switch (t) {
+		case 'player': return findAnySig('PlayerId');
+		case 'ped': return findAnySig('PlayerPedId');
+		case 'entity': return findAnySig('PlayerPedId');
+		case 'hash': return findAnySig('GetHashKey');
+		default: return undefined;
 	}
 }
