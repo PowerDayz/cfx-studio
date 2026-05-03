@@ -19,27 +19,10 @@ import { IServerCfgService } from '../../common/serverCfg.js';
  * Action2 instances so they're available from the command palette (Phase G
  * binds them to the tree's title bar / context menu via menu contributions
  * in a follow-up patch).
+ *
+ * The `cfx.scaffold.new` command is registered by the scaffold subsystem
+ * (Phase E), not here.
  */
-
-class NewResourceAction extends Action2 {
-	static readonly ID = 'cfx.scaffold.new';
-	constructor() {
-		super({
-			id: NewResourceAction.ID,
-			title: localize2('cfx.scaffold.new', 'Cfx: New Resource'),
-			category: localize('cfx.category', 'Cfx Studio'),
-			f1: true,
-		});
-	}
-
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const notificationService = accessor.get(INotificationService);
-		// Phase E patch (0022) replaces this with the full multi-step quickpick.
-		// The stub keeps the command stable so the tree's "New Resource"
-		// title-bar button can bind to it from Phase B onward.
-		notificationService.info(localize('cfx.scaffold.notReady', 'New Resource scaffold ships in Phase E.'));
-	}
-}
 
 class RenameResourceAction extends Action2 {
 	static readonly ID = 'cfx.resource.rename';
@@ -197,7 +180,6 @@ async function validateResourceName(
 }
 
 export function registerResourceActions(): void {
-	registerAction2(NewResourceAction);
 	registerAction2(RenameResourceAction);
 	registerAction2(DeleteResourceAction);
 	registerAction2(ReorderEnsureChainAction);

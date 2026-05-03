@@ -45,6 +45,15 @@ import './console/consoleViewContainer.js';
 import { registerConsoleActions } from './console/consoleActions.js';
 registerConsoleActions();
 
+// Scaffolds + Lua workspace setup (Phase E). Scaffold runner is invoked
+// via the cfx.scaffold.new command; LuaSetupContribution emits .luarc.json
+// + .cfx/cfx-natives.lua and regenerates on game-mode change.
+import { registerScaffoldActions } from './scaffold/scaffoldService.js';
+registerScaffoldActions();
+
+import { registerLuaSetupContribution } from './lua/luaSetupService.js';
+registerLuaSetupContribution();
+
 /**
  * Top-level Cfx Studio contribution. The skeleton patch (0015) registers the
  * lifecycle hook only; subsequent patches plug feature services into it
