@@ -97,11 +97,10 @@ export class ConsoleViewPane extends ViewPane {
 			useShadows: false,
 		}));
 		// The wrapper takes its actual size from layoutBody (which sets
-		// an explicit pixel height). flex:1/min-height:0 let it shrink
-		// to nothing during initial render before the first layout pass.
+		// an explicit pixel height — required by DomScrollableElement so
+		// scanDomNode() can detect content overflow).
 		this.logScrollable.getDomNode().style.flex = '1 1 auto';
 		this.logScrollable.getDomNode().style.minHeight = '0';
-		this.logScrollable.getDomNode().style.height = '0';
 		dom.append(container, this.logScrollable.getDomNode());
 
 		this.refreshTabs();
@@ -118,13 +117,17 @@ export class ConsoleViewPane extends ViewPane {
 	 * to know when the inner content overflows; flex constraints alone
 	 * aren't enough because the wrapper has its own internal layout.
 	 * (See `iconSelectBox.ts` for the same pattern in stock VSCode.)
-	 * The visible log area is the pane height minus the tabs strip on
-	 * top.
+	 *
+	 * The tabs strip above the log uses padding 4px 6px + button text at
+	 * 12px font, ~28 px tall in practice. We reserve a fixed 30 px so we
+	 * don't depend on `clientHeight`, which reads 0 on the first layout
+	 * pass before the browser has measured anything.
 	 */
+	private static readonly TABS_HEIGHT_PX = 30;
+
 	private applyLogScrollDimensions(paneHeight: number): void {
 		if (!this.logScrollable) { return; }
-		const tabsHeight = this.tabsContainer?.clientHeight ?? 0;
-		const logHeight = Math.max(0, paneHeight - tabsHeight);
+		const logHeight = Math.max(0, paneHeight - ConsoleViewPane.TABS_HEIGHT_PX);
 		this.logScrollable.getDomNode().style.height = `${logHeight}px`;
 		this.logScrollable.scanDomNode();
 	}
