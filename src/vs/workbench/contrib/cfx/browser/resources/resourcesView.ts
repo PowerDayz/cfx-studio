@@ -21,6 +21,7 @@ import { IViewletViewOptions } from '../../../../browser/parts/views/viewsViewle
 import { ViewPane } from '../../../../browser/parts/views/viewPane.js';
 import { IViewDescriptorService } from '../../../../common/views.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { joinPath } from '../../../../../base/common/resources.js';
 import {
 	IResourceDiscoveryService,
@@ -59,6 +60,7 @@ export class ResourcesViewPane extends ViewPane {
 		@IHoverService hoverService: IHoverService,
 		@IResourceDiscoveryService private readonly discoveryService: IResourceDiscoveryService,
 		@IEditorService private readonly editorService: IEditorService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, telemetryService, hoverService);
 
@@ -144,6 +146,12 @@ export class ResourcesViewPane extends ViewPane {
 	}
 
 	private async openManifest(resource: IResourceModel): Promise<void> {
+		// Notify the console panel (Phase D) so it surfaces a per-resource
+		// tab. The command is a no-op when the console subsystem isn't
+		// loaded yet (e.g. during the brief window before Phase D's
+		// contribution wires up).
+		this.commandService.executeCommand('cfx.console.focusResource', resource.name).catch(() => { /* */ });
+
 		const manifestName = resource.manifestKind === '__resource' ? '__resource.lua' : 'fxmanifest.lua';
 		const uri = joinPath(resource.folder, manifestName);
 		await this.editorService.openEditor({ resource: uri, options: { preserveFocus: false } });
