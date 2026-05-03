@@ -170,6 +170,68 @@ html, body, #cfx-fxgraph-root {
 /* Command node — orange-ish header to distinguish from purple events. */
 .bnode.kind-command .header { background: #c45a2a; color: #fff; }
 
+/* Comment node lives BEHIND regular nodes (z-index applied via React-
+   Flow node prop). The body is click-through so a comment can serve as
+   a region label around an existing chain without blocking edits. */
+.react-flow__node:has(.bnode.kind-comment) {
+	z-index: -1 !important;
+}
+.bnode.kind-comment {
+	pointer-events: auto;
+}
+.bnode.kind-comment .comment-body {
+	pointer-events: none;
+}
+
+/* React-Flow widget reskin — every overlay (Controls, MiniMap, edge
+   highlight, connection line, background dots) inherits the VSCode
+   editor-widget palette. */
+.react-flow__background {
+	background: var(--vscode-editor-background, #1e1e1e);
+}
+.react-flow__controls {
+	background: var(--vscode-editorWidget-background, #252526);
+	border: 1px solid var(--vscode-panel-border, #3c3c3c);
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.react-flow__controls-button {
+	background: var(--vscode-button-secondaryBackground, #3a3a3a);
+	border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+	color: var(--vscode-foreground, #ddd);
+	fill: currentColor;
+}
+.react-flow__controls-button:hover {
+	background: var(--vscode-button-secondaryHoverBackground, #4a4a4a);
+}
+.react-flow__controls-button svg {
+	fill: var(--vscode-foreground, #ddd);
+}
+.react-flow__minimap {
+	background: var(--vscode-editorWidget-background, #252526) !important;
+	border: 1px solid var(--vscode-panel-border, #3c3c3c);
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.react-flow__minimap-mask {
+	fill: rgba(0, 0, 0, 0.45);
+}
+.react-flow__minimap-node {
+	fill: var(--vscode-foreground, #888);
+	stroke: none;
+}
+/* Connection line + edge selection match the VSCode focus colour. */
+.react-flow__connection-path {
+	stroke: var(--vscode-focusBorder, #007acc) !important;
+}
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus .react-flow__edge-path,
+.react-flow__edge:focus-visible .react-flow__edge-path {
+	stroke: var(--vscode-focusBorder, #007acc) !important;
+}
+/* Hide the upstream attribution panel defensively (proOptions
+   already disables it, but the rule below catches any future panel). */
+.react-flow__attribution { display: none !important; }
+.react-flow__panel { color: var(--vscode-foreground, #ddd); }
+
 /* QuickAddMenu uses position: fixed so we can place it in viewport
    coordinates from clientX/clientY directly — no canvas-relative
    arithmetic, no surprises after zoom/pan. */

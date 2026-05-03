@@ -293,11 +293,18 @@ const CommentNode: React.FC<{ data: FlowData; selected?: boolean }> = ({ data, s
 	const h = n.size?.h ?? 120;
 	return (
 		<>
+			{/* shouldResize gates the resize handles to bottom-right only.
+				Resizing from top/left would change `position` AND size in
+				lockstep — our `onNodesChange` would persist the position
+				change as a doc edit and the comment would drift. By
+				rejecting any non-bottom-right grab, the comment stays put
+				while only width/height change. */}
 			<NodeResizer
 				color="rgba(255, 200, 80, 0.6)"
 				isVisible={selected}
 				minWidth={140}
 				minHeight={60}
+				shouldResize={(_e, params) => params.direction[0] >= 0 && params.direction[1] >= 0}
 				onResizeEnd={(_e, params) => {
 					data.onPatch({ ...n, size: { w: params.width, h: params.height } });
 				}}
@@ -321,6 +328,7 @@ const CommentNode: React.FC<{ data: FlowData; selected?: boolean }> = ({ data, s
 					<textarea
 						autoFocus
 						defaultValue={n.text ?? ''}
+						className="nodrag nowheel"
 						style={{
 							flex: 1,
 							background: 'transparent',
@@ -331,6 +339,7 @@ const CommentNode: React.FC<{ data: FlowData; selected?: boolean }> = ({ data, s
 							padding: 8,
 							font: 'inherit',
 							whiteSpace: 'pre-wrap',
+							pointerEvents: 'auto',
 						}}
 						onBlur={(e) => {
 							setEditing(false);
@@ -347,8 +356,15 @@ const CommentNode: React.FC<{ data: FlowData; selected?: boolean }> = ({ data, s
 						}}
 					/>
 				) : (
-					<div style={{ flex: 1, padding: 8, fontSize: 12, whiteSpace: 'pre-wrap', overflow: 'auto' }}>
-						{n.text || <span style={{ opacity: 0.5 }}>Double-click to edit comment</span>}
+					// Body is click-through (pointer-events: none) so users
+					// can interact with nodes that overlap a comment without
+					// having to move the comment first. Double-click bubbles
+					// to the parent and re-enables editing.
+					<div
+						className="comment-body"
+						style={{ flex: 1, padding: 8, fontSize: 12, whiteSpace: 'pre-wrap', overflow: 'hidden', pointerEvents: 'none' }}
+					>
+						{n.text || <span style={{ opacity: 0.5 }}>Double-click header to edit</span>}
 					</div>
 				)}
 			</div>
