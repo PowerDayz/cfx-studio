@@ -182,6 +182,11 @@ import './contrib/performance/browser/performance.contribution.js';
 // Context Menus
 import './contrib/contextmenu/browser/contextmenu.contribution.js';
 
+// Cfx Studio (FiveM/RedM IDE features). All Cfx-specific subsystems hang
+// off this contribution. Loaded last so it registers after the workbench
+// services it depends on (configuration, lifecycle, registry).
+import './contrib/cfx/browser/cfx.contribution.js';
+
 // Notebook
 import './contrib/notebook/browser/notebook.contribution.js';
 
