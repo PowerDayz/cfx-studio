@@ -67,12 +67,34 @@ export function App() {
 	);
 }
 
+interface QuickAddState {
+	/** Screen-space coords for the menu UI (CSS left/top). */
+	screen: { x: number; y: number };
+	/** Canvas-space coords for the inserted node's `pos`. */
+	flow: { x: number; y: number };
+	/**
+	 * If the menu was opened by dragging from a pin into empty canvas,
+	 * this carries the pin's classification so the menu can pre-filter
+	 * candidates AND auto-wire the freshly-created node.
+	 */
+	seed?: {
+		direction: 'source' | 'target';
+		kind: 'exec' | 'value';
+		type?: string;
+		nodeId: string;
+		pinId: string;
+	};
+}
+
 function EditorInner() {
 	const [doc, setDoc] = useState<GraphDoc>(() => emptyGraphDoc());
-	const [quickAdd, setQuickAdd] = useState<{ x: number; y: number } | null>(null);
+	const [quickAdd, setQuickAdd] = useState<QuickAddState | null>(null);
 	const flowRef = useRef<ReactFlowInstance | null>(null);
 	const docRef = useRef(doc);
 	docRef.current = doc;
+	// Tracks which pin a connect-drag started from so onConnectEnd can
+	// turn an empty-canvas drop into a seeded QuickAddMenu open.
+	const connectStartRef = useRef<{ nodeId: string; pinId: string; handleType: 'source' | 'target' } | null>(null);
 
 	// Mutate the doc and notify the host. The host doesn't yet persist
 	// changes (save round-trip lands in patch 0034), but emitting now
@@ -250,35 +272,88 @@ function EditorInner() {
 		});
 	}, [updateDoc]);
 
-	const onPaneContextMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
-		e.preventDefault();
+	const openQuickAddAt = useCallback((screenX: number, screenY: number, seed?: QuickAddState['seed']) => {
 		const flow = flowRef.current;
 		if (!flow) return;
-		const me = e as MouseEvent;
-		const pos = flow.screenToFlowPosition({ x: me.clientX, y: me.clientY });
-		setQuickAdd({ x: pos.x, y: pos.y });
+		const flowPos = flow.screenToFlowPosition({ x: screenX, y: screenY });
+		setQuickAdd({ screen: { x: screenX, y: screenY }, flow: flowPos, seed });
 	}, []);
+
+	const onPaneContextMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
+		e.preventDefault();
+		const me = e as MouseEvent;
+		openQuickAddAt(me.clientX, me.clientY);
+	}, [openQuickAddAt]);
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === ' ' && !isInputFocused()) {
 				e.preventDefault();
-				const flow = flowRef.current;
-				if (!flow) return;
-				const center = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-				setQuickAdd({ x: center.x, y: center.y });
+				openQuickAddAt(window.innerWidth / 2, window.innerHeight / 2);
 			} else if (e.key === 'Escape') {
 				setQuickAdd(null);
 			}
 		};
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
+	}, [openQuickAddAt]);
+
+	// Pin-drag → empty canvas opens the QuickAddMenu pre-filtered to
+	// nodes that have a compatible pin on the OPPOSITE side, and wires
+	// the new node automatically when the user picks one. This is the
+	// core Blueprint-style authoring move.
+	const onConnectStart: React.ComponentProps<typeof ReactFlow>['onConnectStart'] = useCallback((_e, params) => {
+		const nodeId = params.nodeId;
+		const pinId = params.handleId;
+		const handleType = params.handleType;
+		if (!nodeId || !pinId || !handleType) {
+			connectStartRef.current = null;
+			return;
+		}
+		connectStartRef.current = { nodeId, pinId, handleType };
 	}, []);
 
+	const onConnectEnd: React.ComponentProps<typeof ReactFlow>['onConnectEnd'] = useCallback((event) => {
+		const start = connectStartRef.current;
+		connectStartRef.current = null;
+		if (!start) return;
+		// React-Flow fires onConnectEnd for valid connections too; suppress
+		// the menu when the drop landed on a real handle.
+		const target = event.target as HTMLElement | null;
+		if (target && target.closest && target.closest('.react-flow__handle')) return;
+		const fromNode = docRef.current.nodes.find((n) => n.id === start.nodeId);
+		if (!fromNode) return;
+		const dir = start.handleType;
+		const meta = pinKindOf(fromNode, start.pinId, dir === 'source' ? 'output' : 'input');
+		if (!meta) return;
+		const me = event as MouseEvent;
+		const clientX = (me as { clientX?: number }).clientX ?? window.innerWidth / 2;
+		const clientY = (me as { clientY?: number }).clientY ?? window.innerHeight / 2;
+		openQuickAddAt(clientX, clientY, {
+			direction: dir,
+			kind: meta.kind,
+			type: meta.type,
+			nodeId: start.nodeId,
+			pinId: start.pinId,
+		});
+	}, [openQuickAddAt]);
+
 	const insertNode = useCallback((node: BNode) => {
-		updateDoc((d) => ({ ...d, nodes: [...d.nodes, node] }));
+		const seed = quickAdd?.seed;
+		updateDoc((d) => {
+			let edges2 = d.edges;
+			if (seed) {
+				// Wire seed-pin → first compatible pin on the new node, in
+				// whichever direction (source or target) the drag started
+				// from. We only auto-wire when there is exactly one obvious
+				// match; otherwise let the user drag manually.
+				const wired = autoWireSeed(seed, node);
+				if (wired) edges2 = [...edges2, wired];
+			}
+			return { ...d, nodes: [...d.nodes, node], edges: edges2 };
+		});
 		setQuickAdd(null);
-	}, [updateDoc]);
+	}, [updateDoc, quickAdd]);
 
 	const counts = useMemo(() => `${doc.nodes.length} nodes · ${doc.edges.length} edges`, [doc]);
 	const missingCount = missingPins.size;
@@ -316,6 +391,8 @@ function EditorInner() {
 					onNodesChange={onNodesChange}
 					onEdgesChange={onEdgesChange}
 					onConnect={onConnect}
+					onConnectStart={onConnectStart}
+					onConnectEnd={onConnectEnd}
 					onPaneContextMenu={onPaneContextMenu}
 					onInit={(inst) => { flowRef.current = inst; }}
 					nodeTypes={NODE_TYPES}
@@ -333,8 +410,10 @@ function EditorInner() {
 				)}
 				{quickAdd && (
 					<QuickAddMenu
-						pos={quickAdd}
+						screenPos={quickAdd.screen}
+						flowPos={quickAdd.flow}
 						scope={doc.scope}
+						seed={quickAdd.seed}
 						onPick={insertNode}
 						onCancel={() => setQuickAdd(null)}
 					/>
@@ -407,4 +486,110 @@ function pinColorOf(edge: BEdge, doc: GraphDoc): string {
 	if (from.kind === 'event') pin = (from.outValuePins ?? []).find((p) => p.id === ve.fromPinId);
 	if (!pin) return '#888';
 	return PIN_COLOR_MAP[pin.type] ?? '#888';
+}
+
+/**
+ * When QuickAddMenu was opened from a pin-drag and the user picks a
+ * candidate, build the edge that should connect the seed pin to the
+ * matching pin on the new node — otherwise pin-drag-to-canvas would
+ * still leave the user to wire manually. Returns null when nothing
+ * sensible matches; the new node is inserted unwired in that case.
+ */
+function autoWireSeed(seed: NonNullable<QuickAddState['seed']>, node: BNode): BEdge | null {
+	const opposite = seed.direction === 'source' ? 'input' : 'output';
+	// Inspect the new node for a compatible pin on the opposite side.
+	const candidate = firstCompatiblePin(node, opposite, seed.kind, seed.type);
+	if (!candidate) return null;
+	if (seed.kind === 'exec') {
+		// seed.direction === 'source' means seed is an exec output,
+		// candidate should be an exec input ('in' on the new node).
+		if (seed.direction === 'source') {
+			return {
+				id: nextEdgeId(),
+				kind: 'exec',
+				fromNodeId: seed.nodeId,
+				fromPinId: seed.pinId,
+				toNodeId: node.id,
+				toPinId: candidate.id,
+			};
+		}
+		return {
+			id: nextEdgeId(),
+			kind: 'exec',
+			fromNodeId: node.id,
+			fromPinId: candidate.id,
+			toNodeId: seed.nodeId,
+			toPinId: seed.pinId,
+		};
+	}
+	if (seed.direction === 'source') {
+		return {
+			id: nextEdgeId(),
+			kind: 'value',
+			fromNodeId: seed.nodeId,
+			fromPinId: seed.pinId,
+			toNodeId: node.id,
+			toPinId: candidate.id,
+		};
+	}
+	return {
+		id: nextEdgeId(),
+		kind: 'value',
+		fromNodeId: node.id,
+		fromPinId: candidate.id,
+		toNodeId: seed.nodeId,
+		toPinId: seed.pinId,
+	};
+}
+
+function firstCompatiblePin(
+	node: BNode,
+	side: 'input' | 'output',
+	kind: 'exec' | 'value',
+	wantType: string | undefined,
+): { id: string } | null {
+	if (kind === 'exec') {
+		if (side === 'input') {
+			if (node.kind === 'exec-call' || node.kind === 'var-set') return { id: node.inExec ?? 'in' };
+			if (node.kind === 'control') return { id: node.inExec };
+			return null;
+		}
+		if (node.kind === 'event' || node.kind === 'exec-call' || node.kind === 'var-set') {
+			const out = node.outExec[0];
+			return out ? { id: out.id } : null;
+		}
+		if (node.kind === 'control') {
+			const out = node.outExecBranches[0];
+			return out ? { id: out.id } : null;
+		}
+		return null;
+	}
+	// value pin
+	const pickByType = (pins: ReadonlyArray<PinDef>): PinDef | undefined => {
+		if (!wantType) return pins[0];
+		const direct = pins.find((p) => isAssignable(wantType as EditorType, p.type));
+		if (direct) return direct;
+		return pins.find((p) => isAssignable(p.type, wantType as EditorType));
+	};
+	if (side === 'input') {
+		const argPins =
+			node.kind === 'exec-call' || node.kind === 'control' || node.kind === 'pure' || node.kind === 'var-set'
+				? node.argPins
+				: undefined;
+		if (!argPins) return null;
+		const hit = pickByType(argPins);
+		return hit ? { id: hit.id } : null;
+	}
+	// output
+	if (node.kind === 'pure' || node.kind === 'literal' || node.kind === 'var-get') {
+		return { id: node.resultPin.id };
+	}
+	if (node.kind === 'exec-call' && node.resultPin) {
+		return { id: node.resultPin.id };
+	}
+	if (node.kind === 'event' && node.outValuePins?.length) {
+		const hit = pickByType(node.outValuePins);
+		return hit ? { id: hit.id } : null;
+	}
+	return null;
 }
