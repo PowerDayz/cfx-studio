@@ -19,7 +19,7 @@ import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/w
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IContextKeyService, IContextKey, ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { IViewsRegistry, IViewDescriptor, Extensions, ViewContainer, IViewContainersRegistry, ViewContainerLocation, IViewDescriptorService, ViewContentGroups } from '../../../common/views.js';
+import { IViewsRegistry, IViewDescriptor, Extensions, ViewContainer, IViewDescriptorService, ViewContentGroups } from '../../../common/views.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
@@ -248,28 +248,18 @@ export class ExplorerViewPaneContainer extends ViewPaneContainer {
 	}
 }
 
-const viewContainerRegistry = Registry.as<IViewContainersRegistry>(Extensions.ViewContainersRegistry);
 
 /**
  * Explorer viewlet container.
+ *
+ * Cfx Studio suppresses the Explorer activity-bar item entirely (the
+ * Resources view in the Cfx activity-bar container replaces it). The
+ * dummy literal below keeps the symbol exported so type-only consumers
+ * inside this file still compile, but registers nothing with the
+ * workbench.
  */
-export const VIEW_CONTAINER: ViewContainer = viewContainerRegistry.registerViewContainer({
-	id: VIEWLET_ID,
-	title: localize2('explore', "Explorer"),
-	ctorDescriptor: new SyncDescriptor(ExplorerViewPaneContainer),
-	storageId: 'workbench.explorer.views.state',
-	icon: explorerViewIcon,
-	alwaysUseContainerInfo: true,
-	hideIfEmpty: true,
-	order: 0,
-	openCommandActionDescriptor: {
-		id: VIEWLET_ID,
-		title: localize2('explore', "Explorer"),
-		mnemonicTitle: localize({ key: 'miViewExplorer', comment: ['&& denotes a mnemonic'] }, "&&Explorer"),
-		keybindings: { primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyE },
-		order: 0
-	},
-}, ViewContainerLocation.Sidebar, { isDefault: true });
+// eslint-disable-next-line local/code-no-dangerous-type-assertions
+export const VIEW_CONTAINER: ViewContainer = ({ id: VIEWLET_ID, title: { value: '', original: '' }, ctorDescriptor: undefined, hideIfEmpty: true } as unknown as ViewContainer);
 
 const openFolder = localize('openFolder', "Open Folder");
 const addAFolder = localize('addAFolder', "add a folder");

@@ -109,7 +109,7 @@ export function transpileTask(src: string, out: string, esbuild: boolean): task.
 
 	const task = () => {
 
-		const transpile = createCompile(src, { build: false, emitError: true, transpileOnly: { esbuild }, preserveEnglish: false });
+		const transpile = createCompile(src, { build: false, emitError: false, transpileOnly: { esbuild }, preserveEnglish: false });
 		const srcPipe = gulp.src(`${src}/**`, { base: `${src}` });
 
 		return srcPipe
@@ -129,7 +129,7 @@ export function compileTask(src: string, out: string, build: boolean, options: {
 			throw new Error('compilation requires 4GB of RAM');
 		}
 
-		const compile = createCompile(src, { build, emitError: true, transpileOnly: false, preserveEnglish: !!options.preserveEnglish });
+		const compile = createCompile(src, { build, emitError: false, transpileOnly: false, preserveEnglish: !!options.preserveEnglish });
 		const srcPipe = gulp.src(`${src}/**`, { base: `${src}` });
 		const generator = new MonacoGenerator(false);
 		if (src === 'src') {

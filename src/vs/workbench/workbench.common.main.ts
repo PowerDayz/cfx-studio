@@ -177,7 +177,7 @@ import './contrib/preferences/browser/keybindingsEditorContribution.js';
 import './contrib/preferences/browser/preferencesSearch.js';
 
 // Performance
-import './contrib/performance/browser/performance.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/performance/browser/performance.contribution.js';
 
 // Context Menus
 import './contrib/contextmenu/browser/contextmenu.contribution.js';
@@ -188,23 +188,23 @@ import './contrib/contextmenu/browser/contextmenu.contribution.js';
 import './contrib/cfx/browser/cfx.contribution.js';
 
 // Notebook
-import './contrib/notebook/browser/notebook.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/notebook/browser/notebook.contribution.js';
 
 // Speech
-import './contrib/speech/browser/speech.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/speech/browser/speech.contribution.js';
 
 // Chat
-import './contrib/chat/browser/chat.contribution.js';
-import './contrib/inlineChat/browser/inlineChat.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/chat/browser/chat.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/inlineChat/browser/inlineChat.contribution.js';
 
 // Interactive
-import './contrib/interactive/browser/interactive.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/interactive/browser/interactive.contribution.js';
 
 // repl
-import './contrib/replNotebook/browser/repl.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/replNotebook/browser/repl.contribution.js';
 
 // Testing
-import './contrib/testing/browser/testing.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/testing/browser/testing.contribution.js';
 
 // Logs
 import './contrib/logs/common/logs.contribution.js';
@@ -213,7 +213,7 @@ import './contrib/logs/common/logs.contribution.js';
 import './contrib/quickaccess/browser/quickAccess.contribution.js';
 
 // Explorer
-import './contrib/files/browser/explorerViewlet.js';
+// FIVEM-STUDIO REMOVED: import './contrib/files/browser/explorerViewlet.js';
 import './contrib/files/browser/fileActions.contribution.js';
 import './contrib/files/browser/files.contribution.js';
 
@@ -222,8 +222,8 @@ import './contrib/bulkEdit/browser/bulkEditService.js';
 import './contrib/bulkEdit/browser/preview/bulkEdit.contribution.js';
 
 // Search
-import './contrib/search/browser/search.contribution.js';
-import './contrib/search/browser/searchView.js';
+// FIVEM-STUDIO REMOVED: import './contrib/search/browser/search.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/search/browser/searchView.js';
 
 // Search Editor
 import './contrib/searchEditor/browser/searchEditor.contribution.js';
@@ -232,24 +232,24 @@ import './contrib/searchEditor/browser/searchEditor.contribution.js';
 import './contrib/sash/browser/sash.contribution.js';
 
 // SCM
-import './contrib/scm/browser/scm.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/scm/browser/scm.contribution.js';
 
 // Debug
-import './contrib/debug/browser/debug.contribution.js';
-import './contrib/debug/browser/debugEditorContribution.js';
-import './contrib/debug/browser/breakpointEditorContribution.js';
-import './contrib/debug/browser/callStackEditorContribution.js';
-import './contrib/debug/browser/repl.js';
-import './contrib/debug/browser/debugViewlet.js';
+// FIVEM-STUDIO REMOVED: import './contrib/debug/browser/debug.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/debug/browser/debugEditorContribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/debug/browser/breakpointEditorContribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/debug/browser/callStackEditorContribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/debug/browser/repl.js';
+// FIVEM-STUDIO REMOVED: import './contrib/debug/browser/debugViewlet.js';
 
 // Markers
 import './contrib/markers/browser/markers.contribution.js';
 
 // Merge Editor
-import './contrib/mergeEditor/browser/mergeEditor.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/mergeEditor/browser/mergeEditor.contribution.js';
 
 // Multi Diff Editor
-import './contrib/multiDiffEditor/browser/multiDiffEditor.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/multiDiffEditor/browser/multiDiffEditor.contribution.js';
 
 // Mapped Edits
 import './contrib/mappedEdits/common/mappedEdits.contribution.js';
@@ -258,7 +258,7 @@ import './contrib/mappedEdits/common/mappedEdits.contribution.js';
 import './contrib/commands/common/commands.contribution.js';
 
 // Comments
-import './contrib/comments/browser/comments.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/comments/browser/comments.contribution.js';
 
 // URL Support
 import './contrib/url/browser/url.contribution.js';
@@ -273,8 +273,8 @@ import './contrib/customEditor/browser/customEditor.contribution.js';
 import './contrib/externalUriOpener/common/externalUriOpener.contribution.js';
 
 // Extensions Management
-import './contrib/extensions/browser/extensions.contribution.js';
-import './contrib/extensions/browser/extensionsViewlet.js';
+// FIVEM-STUDIO REMOVED: import './contrib/extensions/browser/extensions.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/extensions/browser/extensionsViewlet.js';
 
 // Output View
 import './contrib/output/common/outputChannelModelService.js';
@@ -291,11 +291,11 @@ import './contrib/externalTerminal/browser/externalTerminal.contribution.js';
 import './contrib/relauncher/browser/relauncher.contribution.js';
 
 // Tasks
-import './contrib/tasks/browser/task.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/tasks/browser/task.contribution.js';
 
 // Remote
-import './contrib/remote/common/remote.contribution.js';
-import './contrib/remote/browser/remote.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/remote/common/remote.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/remote/browser/remote.contribution.js';
 
 // Emmet
 import './contrib/emmet/browser/emmet.contribution.js';
@@ -325,11 +325,11 @@ import './contrib/inlayHints/browser/inlayHintsAccessibilty.js';
 import './contrib/themes/browser/themes.contribution.js';
 
 // Update
-import './contrib/update/browser/update.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/update/browser/update.contribution.js';
 
 // Surveys
-import './contrib/surveys/browser/nps.contribution.js';
-import './contrib/surveys/browser/languageSurveys.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/surveys/browser/nps.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/surveys/browser/languageSurveys.contribution.js';
 
 // Welcome
 import './contrib/welcomeGettingStarted/browser/gettingStarted.contribution.js';
@@ -345,7 +345,7 @@ import './contrib/typeHierarchy/browser/typeHierarchy.contribution.js';
 
 // Outline
 import './contrib/codeEditor/browser/outline/documentSymbolsOutline.js';
-import './contrib/outline/browser/outline.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/outline/browser/outline.contribution.js';
 
 // Language Detection
 import './contrib/languageDetection/browser/languageDetection.contribution.js';
@@ -354,22 +354,22 @@ import './contrib/languageDetection/browser/languageDetection.contribution.js';
 import './contrib/languageStatus/browser/languageStatus.contribution.js';
 
 // Authentication
-import './contrib/authentication/browser/authentication.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/authentication/browser/authentication.contribution.js';
 
 // User Data Sync
-import './contrib/userDataSync/browser/userDataSync.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/userDataSync/browser/userDataSync.contribution.js';
 
 // User Data Profiles
-import './contrib/userDataProfile/browser/userDataProfile.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/userDataProfile/browser/userDataProfile.contribution.js';
 
 // Continue Edit Session
-import './contrib/editSessions/browser/editSessions.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/editSessions/browser/editSessions.contribution.js';
 
 // Code Actions
 import './contrib/codeActions/browser/codeActions.contribution.js';
 
 // Timeline
-import './contrib/timeline/browser/timeline.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/timeline/browser/timeline.contribution.js';
 
 // Local History
 import './contrib/localHistory/browser/localHistory.contribution.js';
@@ -387,16 +387,16 @@ import './contrib/list/browser/list.contribution.js';
 import './contrib/accessibilitySignals/browser/accessibilitySignal.contribution.js';
 
 // Deprecated Extension Migrator
-import './contrib/deprecatedExtensionMigrator/browser/deprecatedExtensionMigrator.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/deprecatedExtensionMigrator/browser/deprecatedExtensionMigrator.contribution.js';
 
 // Bracket Pair Colorizer 2 Telemetry
-import './contrib/bracketPairColorizer2Telemetry/browser/bracketPairColorizer2Telemetry.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/bracketPairColorizer2Telemetry/browser/bracketPairColorizer2Telemetry.contribution.js';
 
 // Accessibility
-import './contrib/accessibility/browser/accessibility.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/accessibility/browser/accessibility.contribution.js';
 
 // Share
-import './contrib/share/browser/share.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/share/browser/share.contribution.js';
 
 // Synchronized Scrolling
 import './contrib/scrollLocking/browser/scrollLocking.contribution.js';

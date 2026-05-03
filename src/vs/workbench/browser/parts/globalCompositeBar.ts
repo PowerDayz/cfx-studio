@@ -52,9 +52,7 @@ export class GlobalCompositeBar extends Disposable {
 
 	readonly element: HTMLElement;
 
-	private readonly globalActivityAction = this._register(new Action(GLOBAL_ACTIVITY_ID));
-	private readonly accountAction = this._register(new Action(ACCOUNTS_ACTIVITY_ID));
-	private readonly globalActivityActionBar: ActionBar;
+	private readonly globalActivityAction = this._register(new Action(GLOBAL_ACTIVITY_ID));	private readonly globalActivityActionBar: ActionBar;
 
 	constructor(
 		private readonly contextMenuActionsProvider: () => IAction[],
@@ -103,7 +101,7 @@ export class GlobalCompositeBar extends Disposable {
 		}));
 
 		if (this.accountsVisibilityPreference) {
-			this.globalActivityActionBar.push(this.accountAction, { index: GlobalCompositeBar.ACCOUNTS_ACTION_INDEX });
+			/* FIVEM-STUDIO: account/profile icon removed */
 		}
 
 		this.globalActivityActionBar.push(this.globalActivityAction);
@@ -142,7 +140,7 @@ export class GlobalCompositeBar extends Disposable {
 		if (this.globalActivityActionBar.length() === 2) {
 			this.globalActivityActionBar.pull(GlobalCompositeBar.ACCOUNTS_ACTION_INDEX);
 		} else {
-			this.globalActivityActionBar.push(this.accountAction, { index: GlobalCompositeBar.ACCOUNTS_ACTION_INDEX });
+			/* FIVEM-STUDIO: account/profile icon removed */
 		}
 	}
 

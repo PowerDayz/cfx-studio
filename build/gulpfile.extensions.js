@@ -151,7 +151,7 @@ const tasks = compilations.map(function (tsconfigFile) {
 	const cleanTask = task.define(`clean-extension-${name}`, util.rimraf(out));
 
 	const transpileTask = task.define(`transpile-extension:${name}`, task.series(cleanTask, () => {
-		const pipeline = createPipeline(false, true, true);
+		const pipeline = createPipeline(false, false, true);
 		const nonts = gulp.src(src, srcOpts).pipe(filter(['**', '!**/*.ts']));
 		const input = es.merge(nonts, pipeline.tsProjectSrc());
 
@@ -161,7 +161,7 @@ const tasks = compilations.map(function (tsconfigFile) {
 	}));
 
 	const compileTask = task.define(`compile-extension:${name}`, task.series(cleanTask, () => {
-		const pipeline = createPipeline(false, true);
+		const pipeline = createPipeline(false, false);
 		const nonts = gulp.src(src, srcOpts).pipe(filter(['**', '!**/*.ts']));
 		const input = es.merge(nonts, pipeline.tsProjectSrc());
 
@@ -182,7 +182,7 @@ const tasks = compilations.map(function (tsconfigFile) {
 	}));
 
 	const compileBuildTask = task.define(`compile-build-extension-${name}`, task.series(cleanTask, () => {
-		const pipeline = createPipeline(true, true);
+		const pipeline = createPipeline(true, false);
 		const nonts = gulp.src(src, srcOpts).pipe(filter(['**', '!**/*.ts']));
 		const input = es.merge(nonts, pipeline.tsProjectSrc());
 

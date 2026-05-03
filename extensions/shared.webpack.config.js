@@ -15,10 +15,9 @@ const CopyWebpackPlugin = require('copy-webpack-plugin');
 const { DefinePlugin, optimize } = require('webpack');
 
 const tsLoaderOptions = {
-	compilerOptions: {
-		'sourceMap': true,
-	},
+	compilerOptions: { 'sourceMap': true },
 	onlyCompileBundledFiles: true,
+	transpileOnly: true,
 };
 
 function withNodeDefaults(/**@type WebpackConfig & { context: string }*/extConfig) {

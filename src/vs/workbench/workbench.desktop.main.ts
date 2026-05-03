@@ -113,19 +113,19 @@ import './contrib/files/electron-sandbox/fileActions.contribution.js';
 import './contrib/codeEditor/electron-sandbox/codeEditor.contribution.js';
 
 // Debug
-import './contrib/debug/electron-sandbox/extensionHostDebugService.js';
+// FIVEM-STUDIO REMOVED: import './contrib/debug/electron-sandbox/extensionHostDebugService.js';
 
 // Extensions Management
-import './contrib/extensions/electron-sandbox/extensions.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/extensions/electron-sandbox/extensions.contribution.js';
 
 // Issues
-import './contrib/issue/electron-sandbox/issue.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/issue/electron-sandbox/issue.contribution.js';
 
 // Process
-import './contrib/issue/electron-sandbox/process.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/issue/electron-sandbox/process.contribution.js';
 
 // Remote
-import './contrib/remote/electron-sandbox/remote.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/remote/electron-sandbox/remote.contribution.js';
 
 // Configuration Exporter
 import './contrib/configExporter/electron-sandbox/configurationExportHelper.contribution.js';
@@ -138,17 +138,17 @@ import './contrib/themes/browser/themes.test.contribution.js';
 import './services/themes/electron-sandbox/themes.contribution.js';
 
 // User Data Sync
-import './contrib/userDataSync/electron-sandbox/userDataSync.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/userDataSync/electron-sandbox/userDataSync.contribution.js';
 
 // Tags
-import './contrib/tags/electron-sandbox/workspaceTagsService.js';
-import './contrib/tags/electron-sandbox/tags.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/tags/electron-sandbox/workspaceTagsService.js';
+// FIVEM-STUDIO REMOVED: import './contrib/tags/electron-sandbox/tags.contribution.js';
 
 // Performance
-import './contrib/performance/electron-sandbox/performance.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/performance/electron-sandbox/performance.contribution.js';
 
 // Tasks
-import './contrib/tasks/electron-sandbox/taskService.js';
+// FIVEM-STUDIO REMOVED: import './contrib/tasks/electron-sandbox/taskService.js';
 
 // External terminal
 import './contrib/externalTerminal/electron-sandbox/externalTerminal.contribution.js';
@@ -163,23 +163,23 @@ import './contrib/splash/electron-sandbox/splash.contribution.js';
 import './contrib/localHistory/electron-sandbox/localHistory.contribution.js';
 
 // Merge Editor
-import './contrib/mergeEditor/electron-sandbox/mergeEditor.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/mergeEditor/electron-sandbox/mergeEditor.contribution.js';
 
 // Multi Diff Editor
-import './contrib/multiDiffEditor/browser/multiDiffEditor.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/multiDiffEditor/browser/multiDiffEditor.contribution.js';
 
 // Remote Tunnel
-import './contrib/remoteTunnel/electron-sandbox/remoteTunnel.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/remoteTunnel/electron-sandbox/remoteTunnel.contribution.js';
 
 // Chat
-import './contrib/chat/electron-sandbox/chat.contribution.js';
-import './contrib/inlineChat/electron-sandbox/inlineChat.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/chat/electron-sandbox/chat.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/inlineChat/electron-sandbox/inlineChat.contribution.js';
 
 // Encryption
 import './contrib/encryption/electron-sandbox/encryption.contribution.js';
 
 // Emergency Alert
-import './contrib/emergencyAlert/electron-sandbox/emergencyAlert.contribution.js';
+// FIVEM-STUDIO REMOVED: import './contrib/emergencyAlert/electron-sandbox/emergencyAlert.contribution.js';
 
 //#endregion
 

@@ -35,8 +35,14 @@ function hygiene(some, linting = true) {
 	const productJson = es.through(function (file) {
 		const product = JSON.parse(file.contents.toString('utf8'));
 
-		if (product.extensionsGallery) {
-			console.error(`product.json: Contains 'extensionsGallery'`);
+		// Microsoft's OSS build forbids `extensionsGallery` so OSS users
+		// don't accidentally consume the Microsoft-only extension marketplace.
+		// Cfx Studio points it at https://open-vsx.org so users can install
+		// third-party Lua / FiveM extensions; the upstream policy does not
+		// apply to this fork. Reject only the Microsoft marketplace URL.
+		const galleryServiceUrl = product.extensionsGallery?.serviceUrl ?? '';
+		if (galleryServiceUrl.includes('marketplace.visualstudio.com') || galleryServiceUrl.includes('vscode.dev')) {
+			console.error(`product.json: 'extensionsGallery.serviceUrl' points at the Microsoft marketplace; use open-vsx.org or another OSS gallery.`);
 			errorCount++;
 		}
 
