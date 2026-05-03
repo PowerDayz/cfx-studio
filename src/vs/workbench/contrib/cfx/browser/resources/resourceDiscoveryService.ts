@@ -3,10 +3,10 @@
  *  Licensed under the MIT License.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { dirname, basename } from '../../../../../base/common/resources.js';
+import { basename } from '../../../../../base/common/resources.js';
 import { IFileService, FileType } from '../../../../../platform/files/common/files.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
@@ -56,8 +56,6 @@ class ResourceDiscoveryService extends Disposable implements IResourceDiscoveryS
 	private _refreshing = false;
 	private _pendingRefresh = false;
 
-	private readonly _fsWatchers = this._register(new DisposableStore());
-
 	constructor(
 		@IFileService private readonly fileService: IFileService,
 		@IWorkspaceContextService private readonly workspaceService: IWorkspaceContextService,
@@ -71,7 +69,7 @@ class ResourceDiscoveryService extends Disposable implements IResourceDiscoveryS
 		this._register(fileService.onDidFilesChange((e) => {
 			// Manifest changes that add/remove/move resources should re-scan.
 			// Cheap check: any change whose path ends in a known manifest filename.
-			if (e.changes.some((c) => MANIFEST_FILES.some((m) => c.resource.path.endsWith(`/${m.name}`)))) {
+			if ([...e.rawAdded, ...e.rawUpdated, ...e.rawDeleted].some((u) => MANIFEST_FILES.some((m) => u.path.endsWith(`/${m.name}`)))) {
 				this.refresh();
 			}
 		}));

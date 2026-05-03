@@ -3,63 +3,23 @@
  *  Licensed under the MIT License.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from '../../../../../base/common/lifecycle.js';
-import { URI } from '../../../../../base/common/uri.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
-import { Registry } from '../../../../../platform/registry/common/platform.js';
-import {
-	Extensions as WorkbenchExtensions,
-	IWorkbenchContribution,
-	IWorkbenchContributionsRegistry,
-} from '../../../../common/contributions.js';
-import { LifecyclePhase } from '../../../../services/lifecycle/common/lifecycle.js';
-import { IEditorResolverService, RegisteredEditorPriority } from '../../../../services/editor/common/editorResolverService.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 
-const FX_GRAPH_GLOB = '*.fxgraph';
-const FX_GRAPH_EDITOR_ID = 'cfx.fxgraphEditor';
-
 /**
- * Registers `.fxgraph` as a Cfx custom editor. The full Blueprint-style
- * webview ships as patch 0022 (Phase F follow-up); this patch installs
- * the editor association so the file type opens with the right intent
- * even before the rich editor lands. While the rich editor is pending,
- * `.fxgraph` files fall back to the JSON text editor (priority is
- * `option`, not `default`, so VSCode offers JSON when the resolver
- * has nothing better).
+ * Hooks for the .fxgraph custom editor. Patch 0021's scope is to keep a
+ * stable command surface (cfx.fxgraph.openAsText) so the rest of the
+ * series can rely on it. The actual custom-editor registration with a
+ * webview-backed editor pane lands in patch 0027 (Phase F implementation
+ * proper), and depends on shared/visual/codegen.ts having been rewritten
+ * for exec pins (patch 0026).
  *
- * On save, sibling `.lua` is regenerated via the visual codegen exposed
- * from `_shared/visual`. That hookup lands alongside the webview in the
- * Phase F follow-up patch.
+ * Until 0027 ships, `.fxgraph` files open as JSON via the default text
+ * editor — which is exactly what `cfx.fxgraph.openAsText` does today.
  */
-class FxGraphEditorContribution extends Disposable implements IWorkbenchContribution {
-	constructor(
-		@IEditorResolverService editorResolverService: IEditorResolverService,
-	) {
-		super();
-
-		this._register(editorResolverService.registerEditor(
-			FX_GRAPH_GLOB,
-			{
-				id: FX_GRAPH_EDITOR_ID,
-				label: localize('cfx.fxgraph.editorLabel', 'Cfx Visual Graph (.fxgraph)'),
-				priority: RegisteredEditorPriority.option,
-			},
-			{
-				canSupportResource: (uri: URI) => uri.path.endsWith('.fxgraph'),
-				singlePerResource: true,
-			},
-			{
-				createEditorInput: ({ resource, options }) => ({
-					editor: { resource, options },
-				}),
-			},
-		));
-	}
-}
 
 class OpenFxGraphAsTextAction extends Action2 {
 	static readonly ID = 'cfx.fxgraph.openAsText';
@@ -67,7 +27,7 @@ class OpenFxGraphAsTextAction extends Action2 {
 		super({
 			id: OpenFxGraphAsTextAction.ID,
 			title: localize2('cfx.fxgraph.openAsText', 'Cfx: Open .fxgraph As Text'),
-			category: localize('cfx.category', 'Cfx Studio'),
+			category: localize2('cfx.category', 'Cfx Studio'),
 			f1: true,
 		});
 	}
@@ -86,8 +46,4 @@ class OpenFxGraphAsTextAction extends Action2 {
 
 export function registerFxGraphEditor(): void {
 	registerAction2(OpenFxGraphAsTextAction);
-	Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench).registerWorkbenchContribution(
-		FxGraphEditorContribution,
-		LifecyclePhase.Restored,
-	);
 }

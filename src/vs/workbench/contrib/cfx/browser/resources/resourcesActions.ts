@@ -30,7 +30,7 @@ class RenameResourceAction extends Action2 {
 		super({
 			id: RenameResourceAction.ID,
 			title: localize2('cfx.resource.rename', 'Cfx: Rename Resource'),
-			category: localize('cfx.category', 'Cfx Studio'),
+			category: localize2('cfx.category', 'Cfx Studio'),
 			f1: true,
 		});
 	}
@@ -82,7 +82,7 @@ class DeleteResourceAction extends Action2 {
 		super({
 			id: DeleteResourceAction.ID,
 			title: localize2('cfx.resource.delete', 'Cfx: Delete Resource'),
-			category: localize('cfx.category', 'Cfx Studio'),
+			category: localize2('cfx.category', 'Cfx Studio'),
 			f1: true,
 		});
 	}
@@ -135,7 +135,7 @@ class ReorderEnsureChainAction extends Action2 {
 		super({
 			id: ReorderEnsureChainAction.ID,
 			title: localize2('cfx.resource.reorderEnsureChain', 'Cfx: Reorder Ensure Chain'),
-			category: localize('cfx.category', 'Cfx Studio'),
+			category: localize2('cfx.category', 'Cfx Studio'),
 			f1: true,
 		});
 	}

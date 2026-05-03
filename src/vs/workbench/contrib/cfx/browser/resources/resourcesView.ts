@@ -64,7 +64,7 @@ export class ResourcesViewPane extends ViewPane {
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, telemetryService, hoverService);
 
-		this._register(this.discoveryService.onDidChangeResources(() => this.render()));
+		this._register(this.discoveryService.onDidChangeResources(() => this.renderRows()));
 	}
 
 	protected override renderBody(container: HTMLElement): void {
@@ -75,7 +75,7 @@ export class ResourcesViewPane extends ViewPane {
 		this.listContainer.style.overflowY = 'auto';
 		this.listContainer.style.padding = '4px 0';
 
-		this.render();
+		this.renderRows();
 	}
 
 	protected override layoutBody(height: number, width: number): void {
@@ -85,7 +85,7 @@ export class ResourcesViewPane extends ViewPane {
 		}
 	}
 
-	private render(): void {
+	private renderRows(): void {
 		if (!this.listContainer) {
 			return;
 		}

@@ -183,7 +183,7 @@ class NewResourceAction extends Action2 {
 		super({
 			id: NewResourceAction.ID,
 			title: localize2('cfx.scaffold.new', 'Cfx: New Resource'),
-			category: localize('cfx.category', 'Cfx Studio'),
+			category: localize2('cfx.category', 'Cfx Studio'),
 			f1: true,
 		});
 	}

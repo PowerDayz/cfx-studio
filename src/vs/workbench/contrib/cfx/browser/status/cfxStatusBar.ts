@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, IDisposable } from '../../../../../base/common/lifecycle.js';
-import { localize } from '../../../../../nls.js';
+import { localize, localize2 } from '../../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
@@ -107,8 +107,8 @@ class PlayServerAction extends Action2 {
 	constructor() {
 		super({
 			id: PlayServerAction.ID,
-			title: localize('cfx.server.play', 'Cfx: Start FXServer'),
-			category: localize('cfx.category', 'Cfx Studio'),
+			title: localize2('cfx.server.play', 'Cfx: Start FXServer'),
+			category: localize2('cfx.category', 'Cfx Studio'),
 			f1: true,
 		});
 	}
@@ -122,8 +122,8 @@ class StopServerAction extends Action2 {
 	constructor() {
 		super({
 			id: StopServerAction.ID,
-			title: localize('cfx.server.stop', 'Cfx: Stop FXServer'),
-			category: localize('cfx.category', 'Cfx Studio'),
+			title: localize2('cfx.server.stop', 'Cfx: Stop FXServer'),
+			category: localize2('cfx.category', 'Cfx Studio'),
 			f1: true,
 		});
 	}
@@ -137,8 +137,8 @@ class RestartServerAction extends Action2 {
 	constructor() {
 		super({
 			id: RestartServerAction.ID,
-			title: localize('cfx.server.restart', 'Cfx: Restart FXServer'),
-			category: localize('cfx.category', 'Cfx Studio'),
+			title: localize2('cfx.server.restart', 'Cfx: Restart FXServer'),
+			category: localize2('cfx.category', 'Cfx Studio'),
 			f1: true,
 		});
 	}

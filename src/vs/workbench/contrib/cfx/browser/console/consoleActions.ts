@@ -3,7 +3,7 @@
  *  Licensed under the MIT License.
  *--------------------------------------------------------------------------------------------*/
 
-import { localize, localize2 } from '../../../../../nls.js';
+import { localize2 } from '../../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { CommandsRegistry } from '../../../../../platform/commands/common/commands.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
@@ -29,7 +29,7 @@ class FocusAllOutputAction extends Action2 {
 		super({
 			id: FocusAllOutputAction.ID,
 			title: localize2('cfx.console.focusAll', 'Cfx: Show All Console Output'),
-			category: localize('cfx.category', 'Cfx Studio'),
+			category: localize2('cfx.category', 'Cfx Studio'),
 			f1: true,
 		});
 	}

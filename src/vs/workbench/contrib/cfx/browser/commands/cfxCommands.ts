@@ -13,7 +13,7 @@ import { ConfigurationTarget } from '../../../../../platform/configuration/commo
 import { GameMode, IGameModeService } from '../../common/gameMode.js';
 import { IResourceDiscoveryService } from '../../common/resources.js';
 
-const CATEGORY = localize('cfx.category', 'Cfx Studio');
+const CATEGORY = localize2('cfx.category', 'Cfx Studio');
 
 class LocateFXServerExeAction extends Action2 {
 	static readonly ID = 'cfx.server.locateExe';
