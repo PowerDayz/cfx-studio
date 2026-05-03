@@ -97,6 +97,9 @@ registerSingleton(IUserDataInitializationService, new SyncDescriptor(UserDataIni
 
 //#region --- workbench contributions
 
+// Cfx Studio (desktop-only services: FXServer process spawn).
+import './contrib/cfx/electron-sandbox/cfx.contribution.js';
+
 // Logs
 import './contrib/logs/electron-sandbox/logs.contribution.js';
 
