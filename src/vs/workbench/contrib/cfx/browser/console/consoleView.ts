@@ -33,13 +33,7 @@ import { stripAnsi } from '../../common/logParser.js';
  * Renderer is a plain DOM list — no xterm — sufficient for this scope.
  */
 export class ConsoleViewPane extends ViewPane {
-	// Same id as the surrounding view container so the workbench's
-	// `mergeViewWithContainerWhenSingleView` logic actually collapses
-	// the inner view header into the container's panel tab — otherwise
-	// the panel shows two stacked "Cfx Console" titles, only one of
-	// which has live content. See `output.contribution.ts` (OUTPUT_VIEW_ID)
-	// for the same pattern in stock VSCode.
-	static readonly ID: string = 'workbench.view.cfxConsole';
+	static readonly ID: string = 'cfx.view.console';
 	static readonly NAME: ILocalizedString = localize2('cfx.console.title', 'Cfx Console');
 
 	private tabsContainer: HTMLElement | undefined;
