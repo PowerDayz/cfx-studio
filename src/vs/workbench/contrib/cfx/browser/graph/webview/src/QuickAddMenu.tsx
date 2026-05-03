@@ -15,6 +15,7 @@ import {
 	nodeEvent,
 	nodeVarGet,
 	nodeVarSet,
+	nodeTriggerEvent,
 } from '../../../../_shared/visual/dist/sig-to-node.js';
 import { STDLIB, RUNTIME_BUILTINS, findStdlib, type StdlibSig } from '../../../../_shared/visual/dist/stdlib.js';
 import { nextNodeId } from '../../../../_shared/visual/dist/doc.js';
@@ -43,12 +44,25 @@ interface VarDecl {
 	type: EditorType;
 }
 
+interface CustomEventDecl {
+	name: string;
+	isNet: boolean;
+	params: { name: string; type: EditorType }[];
+}
+
 interface Props {
 	screenPos: ScreenPos;
 	flowPos: FlowPos;
 	scope: GraphScope;
 	seed?: SeedInfo;
 	variables?: ReadonlyArray<VarDecl>;
+	/**
+	 * Declared-in-this-doc custom events, used to surface a typed
+	 * `trigger <name>(args…)` candidate per event. Same pattern as
+	 * variables → get/set: the user declares once, gets first-class
+	 * palette entries.
+	 */
+	customEvents?: ReadonlyArray<CustomEventDecl>;
 	/**
 	 * The Custom-event and Command palette entries can't build a node
 	 * inline — they need a modal for the name/params. Picking one of
@@ -106,7 +120,7 @@ const RECENT_MAX = 10;
  * flat ranked list across all categories.
  */
 export const QuickAddMenu: React.FC<Props> = ({
-	screenPos, flowPos, scope, seed, variables, onAddCustomEvent, onAddCommand, onPick, onCancel,
+	screenPos, flowPos, scope, seed, variables, customEvents, onAddCustomEvent, onAddCommand, onPick, onCancel,
 }) => {
 	const [query, setQuery] = useState('');
 	const [selected, setSelected] = useState(0);
@@ -235,6 +249,25 @@ export const QuickAddMenu: React.FC<Props> = ({
 			});
 		}
 
+		// Per declared custom event in this doc, surface a typed trigger
+		// node — same one-click pattern as variables. The node's argPins
+		// match the event's declared params, so wiring a trigger feels
+		// symmetrical with the corresponding event handler.
+		for (const ev of customEvents ?? []) {
+			out.push({
+				id: `trigger:${ev.name}`,
+				name: `trigger ${ev.name}`,
+				description: `${ev.isNet ? 'TriggerServerEvent' : 'TriggerEvent'}('${ev.name}', ${ev.params.map((p) => `${p.name}: ${p.type}`).join(', ')})`,
+				section: 'events',
+				build: () => nodeTriggerEvent(ev.name, flowPos, { isNet: ev.isNet, params: ev.params }),
+				inputTypes: [
+					{ kind: 'exec' },
+					...ev.params.map((p) => ({ kind: 'value' as const, type: p.type })),
+				],
+				outputTypes: [{ kind: 'exec' }],
+			});
+		}
+
 		// Comment / sticky-note: free-form documentation block over the
 		// canvas. Lives under "Literals" so it sits near the other
 		// content-only nodes.
@@ -273,7 +306,7 @@ export const QuickAddMenu: React.FC<Props> = ({
 		}
 
 		return out;
-	}, [scope, flowPos, natives, variables]);
+	}, [scope, flowPos, natives, variables, customEvents]);
 
 	// Synthetic "Auto-resolve" candidate when the user dragged from an
 	// INPUT pin into empty canvas — drop the canonical producer for the
