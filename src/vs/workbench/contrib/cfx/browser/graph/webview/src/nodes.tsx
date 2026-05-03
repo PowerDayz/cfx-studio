@@ -93,7 +93,7 @@ const EventNode: React.FC<{ data: FlowData }> = ({ data }) => {
 				</div>
 			</div>
 			{(n.outValuePins ?? []).map((p) => (
-				<PinRow key={p.id} pin={p} side="output" />
+				<PinRow key={p.id} pin={p} side="output" nodeId={n.id} />
 			))}
 		</div>
 	);
@@ -131,7 +131,7 @@ const ExecCallNode: React.FC<{ data: FlowData }> = ({ data }) => {
 					<div />
 					<div className="pin right">
 						<span>{n.resultPin.name}</span>
-						<ValueHandle id={n.resultPin.id} type="source" pinType={n.resultPin.type} />
+						<ValueHandle id={n.resultPin.id} type="source" pinType={n.resultPin.type} nodeId={n.id} />
 					</div>
 				</div>
 			)}
@@ -190,7 +190,7 @@ const PureNode: React.FC<{ data: FlowData }> = ({ data }) => {
 				<div />
 				<div className="pin right">
 					<span>{n.resultPin.name}</span>
-					<ValueHandle id={n.resultPin.id} type="source" pinType={n.resultPin.type} />
+					<ValueHandle id={n.resultPin.id} type="source" pinType={n.resultPin.type} nodeId={n.id} />
 				</div>
 			</div>
 		</div>
@@ -212,7 +212,7 @@ const LiteralNode: React.FC<{ data: FlowData }> = ({ data }) => {
 				</div>
 				<div className="pin right">
 					<span>value</span>
-					<ValueHandle id={n.resultPin.id} type="source" pinType={n.valueType} />
+					<ValueHandle id={n.resultPin.id} type="source" pinType={n.valueType} nodeId={n.id} />
 				</div>
 			</div>
 		</div>
@@ -228,7 +228,7 @@ const VarGetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 				<div />
 				<div className="pin right">
 					<span>{n.name}</span>
-					<ValueHandle id="result" type="source" pinType={n.resultPin.type} />
+					<ValueHandle id="result" type="source" pinType={n.resultPin.type} nodeId={n.id} />
 				</div>
 			</div>
 		</div>
@@ -336,6 +336,7 @@ interface PinRowProps {
 	pin: PinDef;
 	side: 'input' | 'output';
 	missing?: boolean;
+	nodeId?: string;
 }
 
 // Input pins are pure connection points — no inline default-value editor.
@@ -343,7 +344,7 @@ interface PinRowProps {
 // its output pin to this input. When `missing` is true the pin renders
 // with a small red dot — the codegen will emit `nil` for this slot,
 // which usually breaks at runtime, so it's worth flagging.
-const PinRow: React.FC<PinRowProps> = ({ pin, side, missing }) => {
+const PinRow: React.FC<PinRowProps> = ({ pin, side, missing, nodeId }) => {
 	if (side === 'input') {
 		return (
 			<div className="pin-row">
@@ -373,7 +374,7 @@ const PinRow: React.FC<PinRowProps> = ({ pin, side, missing }) => {
 			<div />
 			<div className="pin right">
 				<span>{pin.name}</span>
-				<ValueHandle id={pin.id} type="source" pinType={pin.type} />
+				<ValueHandle id={pin.id} type="source" pinType={pin.type} nodeId={nodeId} />
 			</div>
 		</div>
 	);
@@ -400,7 +401,12 @@ const ExecHandle: React.FC<{ id: string; type: 'source' | 'target' }> = ({ id, t
 	/>
 );
 
-const ValueHandle: React.FC<{ id: string; type: 'source' | 'target'; pinType: EditorType }> = ({ id, type, pinType }) => (
+const ValueHandle: React.FC<{
+	id: string;
+	type: 'source' | 'target';
+	pinType: EditorType;
+	nodeId?: string;
+}> = ({ id, type, pinType, nodeId }) => (
 	<Handle
 		id={id}
 		type={type}
@@ -411,5 +417,12 @@ const ValueHandle: React.FC<{ id: string; type: 'source' | 'target'; pinType: Ed
 			background: PIN_COLOR[pinType] ?? '#888',
 			border: '1px solid var(--vscode-panel-border, #444)',
 		}}
+		// data-* attributes are read by App.tsx's canvas contextmenu
+		// handler to detect right-click on an output pin and open the
+		// "Promote to variable" menu.
+		data-cfx-node-id={nodeId}
+		data-cfx-pin-id={id}
+		data-cfx-pin-type={pinType}
+		data-cfx-pin-side={type}
 	/>
 );

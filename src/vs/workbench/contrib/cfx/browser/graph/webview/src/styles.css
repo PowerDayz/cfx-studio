@@ -252,3 +252,77 @@ html, body, #cfx-fxgraph-root {
 	font-size: 13px;
 	pointer-events: none;
 }
+
+/* Right-mouse-drag box-select overlay. Sits in the canvas wrapper so
+   `left/top` are screen-space pixels (the wrapper itself fills the
+   viewport via the editor-host flex layout). */
+.box-select {
+	position: fixed;
+	border: 1px solid var(--vscode-focusBorder, #007acc);
+	background: rgba(0, 122, 204, 0.12);
+	pointer-events: none;
+	z-index: 999;
+}
+
+/* Floating "Promote to variable" menu — opens at the right-clicked
+   value-output handle. Positioned in viewport coords like .quickadd. */
+.promote-menu {
+	position: fixed;
+	z-index: 1000;
+	background: var(--vscode-quickInput-background, #252526);
+	border: 1px solid var(--vscode-panel-border, #3c3c3c);
+	border-radius: 4px;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+	display: flex;
+	flex-direction: column;
+	min-width: 180px;
+	padding: 4px;
+}
+.promote-menu button {
+	background: transparent;
+	color: inherit;
+	border: none;
+	padding: 6px 10px;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	border-radius: 3px;
+}
+.promote-menu button:hover {
+	background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+/* Keyboard shortcuts modal — backdrop intercepts clicks to close. */
+.shortcuts-modal {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.4);
+	z-index: 2000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.shortcuts-card {
+	background: var(--vscode-editorWidget-background, #252526);
+	border: 1px solid var(--vscode-editorWidget-border, #454545);
+	border-radius: 6px;
+	padding: 16px 20px;
+	min-width: 480px;
+	max-height: 70vh;
+	overflow-y: auto;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.shortcuts-card table {
+	border-collapse: collapse;
+	width: 100%;
+	font-size: 12px;
+}
+.shortcuts-card td {
+	padding: 4px 12px 4px 0;
+	vertical-align: top;
+}
+.shortcuts-card td:first-child {
+	color: var(--vscode-textLink-foreground, #4e94ce);
+	font-family: var(--monaco-monospace-font, monospace);
+	white-space: nowrap;
+}
