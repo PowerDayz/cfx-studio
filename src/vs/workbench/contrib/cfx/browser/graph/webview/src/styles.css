@@ -88,6 +88,11 @@ html, body, #cfx-fxgraph-root {
 .bnode.kind-var-set .header { background: #7a4f8a; color: #fff; }
 
 .bnode .pin-row {
+	/* Each pin row is its own positioning context so the React-Flow
+	   Handles inside it can anchor to the row's vertical centre instead
+	   of the node's. Without this, every Handle stacks at the node's
+	   `top: 50%` and the connectors all overlap at the node centre. */
+	position: relative;
 	display: grid;
 	grid-template-columns: 1fr 1fr;
 	gap: 0;
@@ -107,6 +112,24 @@ html, body, #cfx-fxgraph-root {
 }
 .bnode .pin.left { justify-content: flex-start; }
 .bnode .pin.right { justify-content: flex-end; }
+
+/* Override React-Flow's default handle positioning. By default a Handle
+   uses position:absolute with top:50% relative to the node — every
+   handle in a multi-row node stacks at the node centre. We override
+   so each handle sits at its own row's vertical centre, flush with the
+   node's left or right edge (poking half-width outside via translate). */
+.bnode .pin-row .react-flow__handle {
+	position: absolute;
+	top: 50%;
+}
+.bnode .pin-row .react-flow__handle.react-flow__handle-left {
+	left: 0;
+	transform: translate(-50%, -50%);
+}
+.bnode .pin-row .react-flow__handle.react-flow__handle-right {
+	right: 0;
+	transform: translate(50%, -50%);
+}
 
 .bnode .inline-input {
 	background: var(--vscode-input-background, #3c3c3c);
