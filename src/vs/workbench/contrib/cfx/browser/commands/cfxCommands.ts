@@ -5,7 +5,7 @@
 
 import { localize, localize2 } from '../../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
-import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { IFileDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
@@ -13,6 +13,8 @@ import { ConfigurationTarget } from '../../../../../platform/configuration/commo
 import { GameMode, IGameModeService } from '../../common/gameMode.js';
 import { IResourceDiscoveryService } from '../../common/resources.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
+import { runArtifactDownload } from '../server/artifactsPicker.js';
+import { CFX_NATIVES_CONTAINER_ID } from '../natives/nativesViewContainer.js';
 
 const CATEGORY = localize2('cfx.category', 'Cfx Studio');
 
@@ -56,8 +58,8 @@ class DownloadArtifactsAction extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const { runArtifactDownload } = await import('../server/artifactsPicker.js');
-		await runArtifactDownload(accessor);
+		const instantiationService = accessor.get(IInstantiationService);
+		await runArtifactDownload(instantiationService);
 	}
 }
 
@@ -72,7 +74,6 @@ class ShowNativesReferenceAction extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const { CFX_NATIVES_CONTAINER_ID } = await import('../natives/nativesViewContainer.js');
 		const viewsService = accessor.get(IViewsService);
 		await viewsService.openViewContainer(CFX_NATIVES_CONTAINER_ID, true);
 	}

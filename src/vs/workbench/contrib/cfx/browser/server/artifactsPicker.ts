@@ -5,7 +5,7 @@
 
 import { localize } from '../../../../../nls.js';
 import { CancellationTokenSource } from '../../../../../base/common/cancellation.js';
-import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ConfigurationTarget, IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
@@ -18,13 +18,23 @@ import { IArtifactsService, BuildEntry } from '../../common/artifacts.js';
  *
  * Returns the resolved exe path on success, or undefined on cancel /
  * error (user is notified).
+ *
+ * Takes IInstantiationService rather than ServicesAccessor so the
+ * caller can hold a reference across the multiple awaits inside.
+ * Each service lookup re-enters via invokeFunction.
  */
-export async function runArtifactDownload(accessor: ServicesAccessor): Promise<string | undefined> {
-	const artifactsService = accessor.get(IArtifactsService);
-	const quickInput = accessor.get(IQuickInputService);
-	const progress = accessor.get(IProgressService);
-	const notification = accessor.get(INotificationService);
-	const config = accessor.get(IConfigurationService);
+export async function runArtifactDownload(instantiationService: IInstantiationService): Promise<string | undefined> {
+	// Capture all services up front so subsequent awaits don't have to
+	// re-enter the accessor scope. invokeFunction returns synchronously
+	// when the body is synchronous, so this is safe.
+	const services = instantiationService.invokeFunction((acc) => ({
+		artifactsService: acc.get(IArtifactsService),
+		quickInput: acc.get(IQuickInputService),
+		progress: acc.get(IProgressService),
+		notification: acc.get(INotificationService),
+		config: acc.get(IConfigurationService),
+	}));
+	const { artifactsService, quickInput, progress, notification, config } = services;
 
 	const listToken = new CancellationTokenSource();
 	let builds: BuildEntry[];
@@ -53,7 +63,6 @@ export async function runArtifactDownload(accessor: ServicesAccessor): Promise<s
 			id: b.id,
 		};
 	});
-	// Float the recommended build to the top, then optional/critical, then by id.
 	items.sort((a, b) => {
 		const order = (s: string | undefined) => s?.includes('LATEST_RECOMMENDED') ? 0 : s?.includes('RECOMMENDED') ? 1 : s?.includes('OPTIONAL') ? 2 : 3;
 		return order(a.label) - order(b.label);

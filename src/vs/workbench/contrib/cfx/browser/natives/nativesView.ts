@@ -61,6 +61,7 @@ export class NativesViewPane extends ViewPane {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, telemetryService, hoverService);
 
 		this._register(this.nativesService.onDidChangeMode(() => this.refresh()));
+		this._register(this.nativesService.onDidLoad(() => this.refresh()));
 	}
 
 	protected override renderBody(parent: HTMLElement): void {
@@ -109,9 +110,13 @@ export class NativesViewPane extends ViewPane {
 		const query = this.searchInput.value;
 		const results = this.nativesService.search(query, SEARCH_RESULT_LIMIT);
 		const total = this.nativesService.getAll().length;
-		this.statusLine.textContent = total === 0
-			? localize('cfx.natives.empty', 'No natives loaded — check shared/natives-data/.')
-			: localize('cfx.natives.status', 'Mode: {0} | Showing {1} of {2}', this.nativesService.mode, results.length, total);
+		if (!this.nativesService.isLoaded) {
+			this.statusLine.textContent = localize('cfx.natives.loading', 'Loading natives index…');
+		} else if (total === 0) {
+			this.statusLine.textContent = localize('cfx.natives.empty', 'No natives loaded — check shared/natives-data/.');
+		} else {
+			this.statusLine.textContent = localize('cfx.natives.status', 'Mode: {0} | Showing {1} of {2}', this.nativesService.mode, results.length, total);
+		}
 		dom.clearNode(this.resultList);
 		for (const native of results) {
 			this.renderRow(this.resultList, native);
