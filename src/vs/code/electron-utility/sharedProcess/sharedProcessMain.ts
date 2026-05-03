@@ -20,6 +20,8 @@ import { LogsDataCleaner } from './contrib/logsDataCleaner.js';
 import { UnusedWorkspaceStorageDataCleaner } from './contrib/storageDataCleaner.js';
 import { IChecksumService } from '../../../platform/checksum/common/checksumService.js';
 import { ChecksumService } from '../../../platform/checksum/node/checksumService.js';
+import { ICfxNodeService } from '../../../workbench/contrib/cfx/common/cfxNodeService.js';
+import { CfxNodeService } from '../../../workbench/contrib/cfx/node/cfxNodeServiceImpl.js';
 import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 import { ConfigurationService } from '../../../platform/configuration/common/configurationService.js';
 import { IDiagnosticsService } from '../../../platform/diagnostics/common/diagnostics.js';
@@ -279,6 +281,9 @@ class SharedProcessMain extends Disposable implements IClientConnectionFilter {
 		// Checksum
 		services.set(IChecksumService, new SyncDescriptor(ChecksumService, undefined, false /* proxied to other processes */));
 
+		// Cfx Studio Node service (FXServer spawn + 7z extract)
+		services.set(ICfxNodeService, new SyncDescriptor(CfxNodeService, undefined, false /* proxied to other processes */));
+
 		// V8 Inspect profiler
 		services.set(IV8InspectProfilingService, new SyncDescriptor(V8InspectProfilingService, undefined, false /* proxied to other processes */));
 
@@ -400,6 +405,10 @@ class SharedProcessMain extends Disposable implements IClientConnectionFilter {
 		// Checksum
 		const checksumChannel = ProxyChannel.fromService(accessor.get(IChecksumService), this._store);
 		this.server.registerChannel('checksum', checksumChannel);
+
+		// Cfx Studio Node service
+		const cfxNodeChannel = ProxyChannel.fromService(accessor.get(ICfxNodeService), this._store);
+		this.server.registerChannel('cfxNodeService', cfxNodeChannel);
 
 		// Profiling
 		const profilingChannel = ProxyChannel.fromService(accessor.get(IV8InspectProfilingService), this._store);
