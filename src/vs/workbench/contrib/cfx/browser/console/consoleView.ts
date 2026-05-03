@@ -33,7 +33,13 @@ import { stripAnsi } from '../../common/logParser.js';
  * Renderer is a plain DOM list — no xterm — sufficient for this scope.
  */
 export class ConsoleViewPane extends ViewPane {
-	static readonly ID: string = 'cfx.view.console';
+	// Same id as the surrounding view container so the workbench's
+	// `mergeViewWithContainerWhenSingleView` logic actually collapses
+	// the inner view header into the container's panel tab — otherwise
+	// the panel shows two stacked "Cfx Console" titles, only one of
+	// which has live content. See `output.contribution.ts` (OUTPUT_VIEW_ID)
+	// for the same pattern in stock VSCode.
+	static readonly ID: string = 'workbench.view.cfxConsole';
 	static readonly NAME: ILocalizedString = localize2('cfx.console.title', 'Cfx Console');
 
 	private tabsContainer: HTMLElement | undefined;
@@ -96,8 +102,12 @@ export class ConsoleViewPane extends ViewPane {
 			horizontal: ScrollbarVisibility.Auto,
 			useShadows: false,
 		}));
+		// The wrapper takes its actual size from layoutBody (which sets
+		// an explicit pixel height). flex:1/min-height:0 let it shrink
+		// to nothing during initial render before the first layout pass.
 		this.logScrollable.getDomNode().style.flex = '1 1 auto';
 		this.logScrollable.getDomNode().style.minHeight = '0';
+		this.logScrollable.getDomNode().style.height = '0';
 		dom.append(container, this.logScrollable.getDomNode());
 
 		this.refreshTabs();
@@ -110,16 +120,18 @@ export class ConsoleViewPane extends ViewPane {
 	}
 
 	/**
-	 * DomScrollableElement needs an explicit viewport height to know
-	 * when its inner content overflows; without it the wrapper grows to
-	 * fit content and no scrollbar appears. The visible log area is the
-	 * pane height minus the tabs strip on top.
+	 * DomScrollableElement needs an explicit pixel height on its wrapper
+	 * to know when the inner content overflows; flex constraints alone
+	 * aren't enough because the wrapper has its own internal layout.
+	 * (See `iconSelectBox.ts` for the same pattern in stock VSCode.)
+	 * The visible log area is the pane height minus the tabs strip on
+	 * top.
 	 */
 	private applyLogScrollDimensions(paneHeight: number): void {
 		if (!this.logScrollable) { return; }
 		const tabsHeight = this.tabsContainer?.clientHeight ?? 0;
 		const logHeight = Math.max(0, paneHeight - tabsHeight);
-		this.logScrollable.setScrollDimensions({ height: logHeight });
+		this.logScrollable.getDomNode().style.height = `${logHeight}px`;
 		this.logScrollable.scanDomNode();
 	}
 

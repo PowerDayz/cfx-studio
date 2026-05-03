@@ -266,8 +266,14 @@ export function generateLua(doc: GraphDoc, opts: CodegenOptions = {}): { source:
 			case 'boolean':
 				return v ? 'true' : 'false';
 			case 'number':
+				// Float pin — emit as a float literal even for whole
+				// values (Lua treats `1000` as integer and `1000.0` as
+				// float; most native parameters typed `Float` reject
+				// the integer form silently — the FiveM SetEntityHealth
+				// is the canonical example).
+				return numF(v);
 			case 'integer':
-				return String(typeof v === 'number' ? v : (Number(v) || 0));
+				return String(typeof v === 'number' ? Math.trunc(v) : (Number.parseInt(String(v), 10) || 0));
 			case 'vector3': {
 				if (Array.isArray(v) && v.length === 3) {
 					return `vector3(${numF(v[0])}, ${numF(v[1])}, ${numF(v[2])})`;
