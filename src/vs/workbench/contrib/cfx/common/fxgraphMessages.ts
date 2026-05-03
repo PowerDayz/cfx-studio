@@ -19,7 +19,17 @@ import type { GameMode } from './gameMode.js';
 export type HostToWebviewMessage =
 	| { type: 'init'; doc: unknown; gameMode: GameMode; resourceFunctions?: ReadonlyArray<{ name: string; params: ReadonlyArray<{ name: string; type: string }> }> }
 	| { type: 'apply-patch'; patch: unknown }
-	| { type: 'native-search-result'; query: string; results: ReadonlyArray<{ name: string; ns: string; hash: string }> }
+	| {
+		type: 'native-search-result';
+		query: string;
+		results: ReadonlyArray<{
+			name: string;
+			ns: string;
+			hash: string;
+			params: ReadonlyArray<{ name: string; type: string }>;
+			results: string;
+		}>;
+	}
 	| { type: 'function-table-update'; functions: ReadonlyArray<{ name: string; params: ReadonlyArray<{ name: string; type: string }> }> };
 
 /** Sent webview → host. */

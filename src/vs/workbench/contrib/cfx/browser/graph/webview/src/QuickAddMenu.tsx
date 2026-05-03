@@ -5,6 +5,7 @@ import type { EditorType } from '../../../../_shared/visual/dist/types.js';
 import type { GraphScope } from '../../../../_shared/visual/dist/doc.js';
 import {
 	nodeFromStdlib,
+	nodeFromNative,
 	nodeIf,
 	nodeEvery,
 	nodeAfter,
@@ -16,6 +17,7 @@ import {
 } from '../../../../_shared/visual/dist/sig-to-node.js';
 import { STDLIB } from '../../../../_shared/visual/dist/stdlib.js';
 import { eventsForScope } from '../../../../_shared/visual/dist/events.js';
+import { vscode } from './messages';
 
 interface Props {
 	pos: { x: number; y: number };
@@ -31,18 +33,59 @@ interface Candidate {
 	build: () => BNode;
 }
 
+interface NativeHit {
+	hash: string;
+	ns: string;
+	name: string;
+	params: { name: string; type: string }[];
+	results: string;
+}
+
 /**
  * Searchable node-add palette. Triggered by Space (centred at viewport
- * mid) or right-click on the canvas (anchored at click coords). Catalog
- * is fully static for patch 0033; native search and per-resource user
- * functions land in patch 0034 once the host plumbing exists.
+ * mid) or right-click on the canvas (anchored at click coords).
+ *
+ * Static catalog (events / control / literals / vars / stdlib) is built
+ * up-front; native search is async — we post `request-native-search`
+ * with the current query and the host pushes back `native-search-result`
+ * messages we merge into the candidate list. This keeps the natives
+ * index (~6k entries) on the host side rather than shipping it into
+ * every webview.
  */
 export const QuickAddMenu: React.FC<Props> = ({ pos, scope, onPick, onCancel }) => {
 	const [query, setQuery] = useState('');
 	const [selected, setSelected] = useState(0);
+	const [natives, setNatives] = useState<NativeHit[]>([]);
 	const inputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => { inputRef.current?.focus(); }, []);
+
+	// Listen for host → webview native-search-result and update local state.
+	useEffect(() => {
+		const handler = (e: MessageEvent) => {
+			const msg = e.data as { type?: string; query?: string; results?: NativeHit[] };
+			if (msg && msg.type === 'native-search-result' && Array.isArray(msg.results)) {
+				setNatives(msg.results);
+			}
+		};
+		window.addEventListener('message', handler);
+		return () => window.removeEventListener('message', handler);
+	}, []);
+
+	// Debounced native search request as the user types. Skip empty
+	// queries (the static catalog already shows useful entries on
+	// open).
+	useEffect(() => {
+		const q = query.trim();
+		if (q.length < 2) {
+			setNatives([]);
+			return;
+		}
+		const t = setTimeout(() => {
+			vscode?.postMessage({ type: 'request-native-search', query: q });
+		}, 120);
+		return () => clearTimeout(t);
+	}, [query]);
 
 	const candidates = useMemo<Candidate[]>(() => {
 		const out: Candidate[] = [];
@@ -82,8 +125,17 @@ export const QuickAddMenu: React.FC<Props> = ({ pos, scope, onPick, onCancel }) 
 			});
 		}
 
+		for (const n of natives) {
+			out.push({
+				id: `native:${n.hash}`,
+				name: `${n.ns}.${n.name}`,
+				description: `${(n.params ?? []).map((p) => `${p.name}: ${p.type}`).join(', ')} → ${n.results ?? 'void'}`,
+				build: () => nodeFromNative(n as Parameters<typeof nodeFromNative>[0], pos),
+			});
+		}
+
 		return out;
-	}, [scope, pos]);
+	}, [scope, pos, natives]);
 
 	const filtered = useMemo(() => {
 		if (!query.trim()) return candidates.slice(0, 50);
@@ -120,7 +172,7 @@ export const QuickAddMenu: React.FC<Props> = ({ pos, scope, onPick, onCancel }) 
 				value={query}
 				onChange={(e) => setQuery(e.target.value)}
 				onKeyDown={onKeyDown}
-				placeholder="Search nodes…"
+				placeholder="Search nodes (events, stdlib, natives)…"
 			/>
 			<ul>
 				{filtered.map((c, i) => (
