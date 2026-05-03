@@ -29,6 +29,15 @@ import './resources/resourcesViewContainer.js';
 import { registerResourceActions } from './resources/resourcesActions.js';
 registerResourceActions();
 
+// FXServer runtime + status bar (Phase C). The FXServer service itself
+// is registered in the desktop-only contribution because it needs Node
+// (child_process); these are the renderer-side pieces.
+import { registerStatusBarContribution } from './status/cfxStatusBar.js';
+registerStatusBarContribution();
+
+import { registerAutoRestartContribution } from './server/autoRestart.js';
+registerAutoRestartContribution();
+
 /**
  * Top-level Cfx Studio contribution. The skeleton patch (0015) registers the
  * lifecycle hook only; subsequent patches plug feature services into it
