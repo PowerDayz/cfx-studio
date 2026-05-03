@@ -58,6 +58,10 @@ import { IReadonlyEditorGroupModel } from '../../../common/editor/editorGroupMod
 import { IHostService } from '../../../services/host/browser/host.js';
 import { BugIndicatingError } from '../../../../base/common/errors.js';
 import { applyDragImage } from '../../../../base/browser/dnd.js';
+import { Action, IAction } from '../../../../base/common/actions.js';
+import { ThemeIcon } from '../../../../base/common/themables.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { TabDecorations } from './tabDecorations.js';
 
 interface IEditorInputLabel {
 	readonly editor: EditorInput;
@@ -162,6 +166,15 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 
 		// React to decorations changing for our resource labels
 		this._register(this.tabResourceLabels.onDidChangeDecorations(() => this.doHandleDecorationsChange()));
+
+		// Cfx Studio: per-tab action decorations (e.g. Restart-Script).
+		// When a contributor is added/removed or it asks for a refresh,
+		// re-apply decorations to every visible tab.
+		this._register(TabDecorations.onDidChange(() => {
+			this.forEachTab((editor, tabIndex, tabContainer, tabLabelWidget, tabLabel, tabActionBar) => {
+				this.redrawTab(editor, tabIndex, tabContainer, tabLabelWidget, tabLabel, tabActionBar);
+			});
+		}));
 	}
 
 	protected override create(parent: HTMLElement): HTMLElement {
@@ -1532,11 +1545,26 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 			tabAction = isTabSticky ? this.unpinEditorAction : this.closeEditorAction;
 		}
 
-		if (!tabActionBar.hasAction(tabAction)) {
+		// Cfx Studio: collect any per-tab decoration buttons (e.g. the
+		// Restart-Script icon for tabs whose file lives in a resource).
+		// These render to the LEFT of the close (×) button — same row,
+		// same hover treatment, same disposal lifecycle.
+		const decorationActions = this.buildTabDecorationActions(editor);
+
+		// We must rebuild the action bar whenever decorations differ
+		// from what's currently rendered, so the cheap `hasAction` fast
+		// path gets bypassed if any decorations are involved.
+		const needsRebuild = !tabActionBar.hasAction(tabAction)
+			|| decorationActions.length > 0
+			|| this.tabActionBarHasDecorations(tabActionBar);
+
+		if (needsRebuild) {
 			if (!tabActionBar.isEmpty()) {
 				tabActionBar.clear();
 			}
-
+			for (const action of decorationActions) {
+				tabActionBar.push(action, { icon: true, label: false });
+			}
 			tabActionBar.push(tabAction, { icon: true, label: false, keybinding: this.getKeybindingLabel(tabAction) });
 		}
 
@@ -2174,6 +2202,53 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		// the automated revealing of the active tab once after the close is
 		// triggered.
 		this.blockRevealActiveTab = true;
+	}
+
+	// ---- Cfx Studio: per-tab decoration buttons -----------------------
+
+	/**
+	 * Build the IAction list for this tab's contributed decorations
+	 * (Cfx adds Restart-Script for tabs whose file is in a resource).
+	 * Returns [] when no contributor matches; the close button still
+	 * renders normally either way.
+	 */
+	private buildTabDecorationActions(editor: EditorInput): IAction[] {
+		const decorators = TabDecorations.all();
+		if (decorators.length === 0) {
+			return [];
+		}
+		const resource = EditorResourceAccessor.getOriginalUri(editor, { supportSideBySide: SideBySideEditor.PRIMARY });
+		const out: IAction[] = [];
+		for (const decorator of decorators) {
+			const desc = decorator.decorate(resource ?? undefined, editor);
+			if (!desc) {
+				continue;
+			}
+			const action = new Action(
+				`tabDecoration.${desc.id}`,
+				desc.title,
+				ThemeIcon.asClassName(desc.icon),
+				true,
+				async () => {
+					await this.instantiationService.invokeFunction(
+						(accessor) => accessor.get(ICommandService).executeCommand(desc.commandId, desc.commandArg),
+					);
+				},
+			);
+			action.tooltip = desc.title;
+			out.push(action);
+		}
+		return out;
+	}
+
+	/**
+	 * Whether the action bar is currently rendering any decoration
+	 * actions in addition to the standard close (×) action. Used so
+	 * that going from "N decorations → 0 decorations" still triggers a
+	 * rebuild even when the close button itself hasn't changed.
+	 */
+	private tabActionBarHasDecorations(tabActionBar: ActionBar): boolean {
+		return tabActionBar.length() > 1;
 	}
 
 	private originatesFromTabActionBar(e: MouseEvent | GestureEvent): boolean {

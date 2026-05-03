@@ -35,6 +35,9 @@ registerResourceActions();
 import { registerStatusBarContribution } from './status/cfxStatusBar.js';
 registerStatusBarContribution();
 
+import { registerCfxTabDecoration } from './status/cfxTabDecoration.js';
+registerCfxTabDecoration();
+
 import { registerAutoRestartContribution } from './server/autoRestart.js';
 registerAutoRestartContribution();
 

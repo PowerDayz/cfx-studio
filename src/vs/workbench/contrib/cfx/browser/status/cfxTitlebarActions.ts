@@ -76,7 +76,7 @@ const cfxIconRestart = registerIcon(
 	Codicon.refresh,
 	localize('cfx.icon.restart', 'Cfx Studio – restart FXServer.'),
 );
-const cfxIconRestartResource = registerIcon(
+export const cfxIconRestartResource = registerIcon(
 	'cfx-resource-restart-current',
 	Codicon.debugRestart,
 	localize('cfx.icon.restartResource', 'Cfx Studio – restart the current resource.'),
@@ -167,7 +167,7 @@ class RestartFxServerAction extends Action2 {
 	}
 }
 
-class RestartCurrentResourceAction extends Action2 {
+export class RestartCurrentResourceAction extends Action2 {
 	static readonly ID = 'cfx.resource.restartCurrent';
 	constructor() {
 		super({
@@ -179,10 +179,23 @@ class RestartCurrentResourceAction extends Action2 {
 			f1: true,
 		});
 	}
-	async run(accessor: ServicesAccessor): Promise<void> {
+	/**
+	 * The optional `resourceName` arg is supplied by the per-tab
+	 * decoration (cfxTabDecoration.ts) so the click restarts the tab's
+	 * own resource — not whichever editor happens to be active. When
+	 * absent (e.g. command-palette invocation), we fall back to the
+	 * active editor's enclosing resource.
+	 */
+	async run(accessor: ServicesAccessor, resourceName?: string): Promise<void> {
+		const fxServer = accessor.get(IFXServerService);
+
+		if (typeof resourceName === 'string' && resourceName.length > 0) {
+			await fxServer.restartResource(resourceName);
+			return;
+		}
+
 		const editorService = accessor.get(IEditorService);
 		const fileService = accessor.get(IFileService);
-		const fxServer = accessor.get(IFXServerService);
 
 		const uri = editorService.activeEditor?.resource;
 		if (!uri) {
@@ -266,8 +279,12 @@ export function registerCfxTitlebarActions(): void {
 	registerAction2(RestartFxServerAction);
 	registerAction2(RestartCurrentResourceAction);
 
-	MenuRegistry.appendMenuItem(MenuId.LayoutControlMenu, {
-		group: '0_cfx',
+	// FXServer Start / Stop / Restart live in the editor pane's right
+	// action toolbar (next to split-editor + the More-Actions ellipsis).
+	// Group `navigation` puts them in the same right-anchored cluster
+	// as the stock workbench actions there.
+	MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
+		group: 'navigation',
 		order: 1,
 		command: {
 			id: StartFxServerAction.ID,
@@ -277,8 +294,8 @@ export function registerCfxTitlebarActions(): void {
 		when: SERVER_IDLE_OR_ERRORED,
 	});
 
-	MenuRegistry.appendMenuItem(MenuId.LayoutControlMenu, {
-		group: '0_cfx',
+	MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
+		group: 'navigation',
 		order: 2,
 		command: {
 			id: StopFxServerAction.ID,
@@ -288,8 +305,8 @@ export function registerCfxTitlebarActions(): void {
 		when: ContextKeyExpr.or(SERVER_RUNNING, SERVER_STARTING),
 	});
 
-	MenuRegistry.appendMenuItem(MenuId.LayoutControlMenu, {
-		group: '0_cfx',
+	MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
+		group: 'navigation',
 		order: 3,
 		command: {
 			id: RestartFxServerAction.ID,
@@ -299,17 +316,10 @@ export function registerCfxTitlebarActions(): void {
 		when: SERVER_RUNNING,
 	});
 
-	MenuRegistry.appendMenuItem(MenuId.LayoutControlMenu, {
-		group: '0_cfx',
-		order: 4,
-		command: {
-			id: RestartCurrentResourceAction.ID,
-			title: localize('cfx.resource.restartCurrent.short', 'Restart Current Resource'),
-			icon: cfxIconRestartResource,
-			precondition: CFX_ACTIVE_RESOURCE_KEY.notEqualsTo(''),
-		},
-		when: SERVER_RUNNING,
-	});
+	// Restart-current-resource is rendered as a per-tab action
+	// (cfxTabDecoration.ts), so it isn't registered in any menu — but
+	// the Action2 above stays so it remains discoverable from the
+	// command palette.
 
 	Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench).registerWorkbenchContribution(
 		CfxTitlebarStateContribution,

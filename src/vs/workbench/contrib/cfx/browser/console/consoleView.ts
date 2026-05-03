@@ -106,7 +106,21 @@ export class ConsoleViewPane extends ViewPane {
 
 	protected override layoutBody(height: number, width: number): void {
 		super.layoutBody(height, width);
-		this.logScrollable?.scanDomNode();
+		this.applyLogScrollDimensions(height);
+	}
+
+	/**
+	 * DomScrollableElement needs an explicit viewport height to know
+	 * when its inner content overflows; without it the wrapper grows to
+	 * fit content and no scrollbar appears. The visible log area is the
+	 * pane height minus the tabs strip on top.
+	 */
+	private applyLogScrollDimensions(paneHeight: number): void {
+		if (!this.logScrollable) { return; }
+		const tabsHeight = this.tabsContainer?.clientHeight ?? 0;
+		const logHeight = Math.max(0, paneHeight - tabsHeight);
+		this.logScrollable.setScrollDimensions({ height: logHeight });
+		this.logScrollable.scanDomNode();
 	}
 
 	private refreshTabs(): void {
@@ -149,8 +163,14 @@ export class ConsoleViewPane extends ViewPane {
 		// for ~10k short lines is well under 10 ms.
 		this.logContainer.textContent = lines.map(stripAnsi).join('\n');
 
-		// Tell DomScrollableElement to recalc scrollHeight from the new
-		// content, then auto-scroll to the bottom if we were tailing.
+		// Recompute the viewport height in case the pane was resized
+		// while we were hidden. Then tell DomScrollableElement to
+		// re-measure scrollHeight from the new content. Finally tail-
+		// scroll if we were following.
+		const wrapperHeight = this.logScrollable.getDomNode().clientHeight;
+		if (wrapperHeight > 0) {
+			this.logScrollable.setScrollDimensions({ height: wrapperHeight });
+		}
 		this.logScrollable.scanDomNode();
 		if (wasNearBottom) {
 			const dim = this.logScrollable.getScrollDimensions();

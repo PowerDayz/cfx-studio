@@ -82,7 +82,7 @@ class CfxStatusBarContribution extends Disposable implements IWorkbenchContribut
 	private resourceEntry?: IStatusbarEntryAccessor;
 
 	private startedAt: number | undefined;
-	private uptimeTimer: ReturnType<typeof mainWindow.setInterval> | undefined;
+	private uptimeTimer: number | undefined;
 
 	private currentResource = '';
 	private resourceLookupGen = 0;
