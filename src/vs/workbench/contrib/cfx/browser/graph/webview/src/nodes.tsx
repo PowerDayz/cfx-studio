@@ -68,6 +68,7 @@ export const BlueprintNode: React.FC<NodeProps<{ data: FlowData; type: 'blueprin
 		case 'var-get': return <VarGetNode data={data} />;
 		case 'var-set': return <VarSetNode data={data} />;
 		case 'comment': return <CommentNode data={data} selected={selected} />;
+		case 'command': return <CommandNode data={data} />;
 	}
 };
 
@@ -257,6 +258,29 @@ const VarSetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 					side="input"
 					missing={data.missingPins?.has(`${n.id}|${p.id}`)}
 				/>
+			))}
+		</div>
+	);
+};
+
+const CommandNode: React.FC<{ data: FlowData }> = ({ data }) => {
+	const n = data.bnode as Extract<BNode, { kind: 'command' }>;
+	const out = n.outExec[0];
+	return (
+		<div className="bnode kind-command">
+			<div className="header">
+				<span>⚙ /{n.command || '???'}</span>
+				{n.restricted && <span style={{ fontSize: 10, opacity: 0.7 }}>restricted</span>}
+			</div>
+			<div className="pin-row exec">
+				<div />
+				<div className="pin right">
+					<span>next</span>
+					<ExecHandle id={out?.id ?? 'next'} type="source" />
+				</div>
+			</div>
+			{n.outValuePins.map((p) => (
+				<PinRow key={p.id} pin={p} side="output" nodeId={n.id} />
 			))}
 		</div>
 	);

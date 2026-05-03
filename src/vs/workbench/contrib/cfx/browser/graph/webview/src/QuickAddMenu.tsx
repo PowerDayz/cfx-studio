@@ -49,6 +49,14 @@ interface Props {
 	scope: GraphScope;
 	seed?: SeedInfo;
 	variables?: ReadonlyArray<VarDecl>;
+	/**
+	 * The Custom-event and Command palette entries can't build a node
+	 * inline — they need a modal for the name/params. Picking one of
+	 * those entries calls these callbacks with the flow position; the
+	 * host opens the modal and inserts the node on submit.
+	 */
+	onAddCustomEvent?: (flowPos: FlowPos) => void;
+	onAddCommand?: (flowPos: FlowPos) => void;
 	onPick: (node: BNode) => void;
 	onCancel: () => void;
 }
@@ -97,7 +105,9 @@ const RECENT_MAX = 10;
  * docs site organisation. Search collapses the sidebar and shows a
  * flat ranked list across all categories.
  */
-export const QuickAddMenu: React.FC<Props> = ({ screenPos, flowPos, scope, seed, variables, onPick, onCancel }) => {
+export const QuickAddMenu: React.FC<Props> = ({
+	screenPos, flowPos, scope, seed, variables, onAddCustomEvent, onAddCommand, onPick, onCancel,
+}) => {
 	const [query, setQuery] = useState('');
 	const [selected, setSelected] = useState(0);
 	const [activeSection, setActiveSection] = useState<SectionKey>('events');
@@ -134,6 +144,30 @@ export const QuickAddMenu: React.FC<Props> = ({ screenPos, flowPos, scope, seed,
 
 	const candidates = useMemo<Candidate[]>(() => {
 		const out: Candidate[] = [];
+
+		// Custom event + Command sit at the top of the Events section so
+		// users see them as first-class peers of the catalog entries.
+		// Their `build()` returns a placeholder; the actual node is
+		// created by the host modal on submit, so we route through
+		// `onAddCustomEvent` / `onAddCommand` in `pick()`.
+		out.push({
+			id: 'custom-event',
+			name: '✨ Custom event…',
+			description: 'AddEventHandler for any event name (local or net). Define your own handler params.',
+			section: 'events',
+			build: () => nodeEvent('__placeholder__', flowPos),
+			inputTypes: [],
+			outputTypes: [{ kind: 'exec' }],
+		});
+		out.push({
+			id: 'command',
+			name: '⚙ Command…',
+			description: 'RegisterCommand("name", function(source, args, raw) … end).',
+			section: 'events',
+			build: () => nodeEvent('__placeholder__', flowPos),
+			inputTypes: [],
+			outputTypes: [{ kind: 'exec' }],
+		});
 
 		for (const ev of eventsForScope(scope)) {
 			out.push({
@@ -316,6 +350,19 @@ export const QuickAddMenu: React.FC<Props> = ({ screenPos, flowPos, scope, seed,
 		const next = [c.id, ...recent.filter((id) => id !== c.id)].slice(0, RECENT_MAX);
 		setRecent(next);
 		saveRecent(next);
+		// Magic palette entries route to the host's modal flows instead
+		// of inserting a node directly — they need a name + params the
+		// menu can't gather inline.
+		if (c.id === 'custom-event' && onAddCustomEvent) {
+			onCancel();
+			onAddCustomEvent(flowPos);
+			return;
+		}
+		if (c.id === 'command' && onAddCommand) {
+			onCancel();
+			onAddCommand(flowPos);
+			return;
+		}
 		onPick(c.build());
 	};
 

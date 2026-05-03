@@ -29,7 +29,7 @@ import type {
 	ValueEdge,
 } from '../../../../_shared/visual/dist/doc.js';
 import { emptyGraphDoc, nextEdgeId } from '../../../../_shared/visual/dist/doc.js';
-import { nodeVarSet, nodeVarGet } from '../../../../_shared/visual/dist/sig-to-node.js';
+import { nodeVarSet, nodeVarGet, nodeCustomEvent, nodeCommand } from '../../../../_shared/visual/dist/sig-to-node.js';
 import { isAssignable, type EditorType } from '../../../../_shared/visual/dist/types.js';
 
 import { vscode } from './messages';
@@ -100,6 +100,8 @@ function EditorInner() {
 		| { mode: 'promote'; defaultName: string; defaultType: EditorType; nodeId: string; pinId: string }
 		| null
 	>(null);
+	const [eventModal, setEventModal] = useState<{ flowPos: { x: number; y: number } } | null>(null);
+	const [commandModal, setCommandModal] = useState<{ flowPos: { x: number; y: number } } | null>(null);
 	const flowRef = useRef<ReactFlowInstance | null>(null);
 	const docRef = useRef(doc);
 	docRef.current = doc;
@@ -537,6 +539,8 @@ function EditorInner() {
 				setQuickAdd(null);
 				setPromoteMenu(null);
 				setShowHelp(false);
+				setEventModal(null);
+				setCommandModal(null);
 			} else if (meta && (e.key === 'd' || e.key === 'D')) {
 				e.preventDefault();
 				duplicateSelection();
@@ -550,6 +554,12 @@ function EditorInner() {
 			} else if (e.key === '?' || (e.shiftKey && e.key === '/')) {
 				e.preventDefault();
 				setShowHelp((v) => !v);
+			} else if (e.shiftKey && (e.key === 'C' || e.key === 'c') && !meta) {
+				e.preventDefault();
+				const flow = flowRef.current;
+				if (!flow) return;
+				const flowPos = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+				setCommandModal({ flowPos });
 			}
 		};
 		window.addEventListener('keydown', onKey);
@@ -732,6 +742,8 @@ function EditorInner() {
 						scope={doc.scope}
 						seed={quickAdd.seed}
 						variables={doc.variables}
+						onAddCustomEvent={(fp) => setEventModal({ flowPos: fp })}
+						onAddCommand={(fp) => setCommandModal({ flowPos: fp })}
 						onPick={insertNode}
 						onCancel={() => setQuickAdd(null)}
 					/>
@@ -790,6 +802,26 @@ function EditorInner() {
 					}}
 				/>
 			)}
+			{eventModal && (
+				<EventCustomModal
+					onCancel={() => setEventModal(null)}
+					onSubmit={(name, isNet, params) => {
+						const node = nodeCustomEvent(name, eventModal.flowPos, { isNet, params });
+						updateDoc((d) => ({ ...d, nodes: [...d.nodes, node] }));
+						setEventModal(null);
+					}}
+				/>
+			)}
+			{commandModal && (
+				<CommandModalView
+					onCancel={() => setCommandModal(null)}
+					onSubmit={(name, restricted) => {
+						const node = nodeCommand(name, commandModal.flowPos, { restricted });
+						updateDoc((d) => ({ ...d, nodes: [...d.nodes, node] }));
+						setCommandModal(null);
+					}}
+				/>
+			)}
 			{showHelp && (
 				<div className="shortcuts-modal" onClick={() => setShowHelp(false)}>
 					<div className="shortcuts-card" onClick={(e) => e.stopPropagation()}>
@@ -803,6 +835,7 @@ function EditorInner() {
 								<tr><td>Ctrl/Cmd+Z</td><td>Undo</td></tr>
 								<tr><td>Ctrl/Cmd+Shift+Z · Ctrl/Cmd+Y</td><td>Redo</td></tr>
 								<tr><td>Ctrl/Cmd+D</td><td>Duplicate selection</td></tr>
+								<tr><td>Shift+C</td><td>Add command (RegisterCommand)</td></tr>
 								<tr><td>Backspace · Delete</td><td>Remove selection</td></tr>
 								<tr><td>Right-click on output pin</td><td>Promote value to variable</td></tr>
 								<tr><td>?</td><td>Toggle this help</td></tr>
@@ -916,6 +949,151 @@ const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaul
 	);
 };
 
+/**
+ * Modal for declaring a custom (non-catalog) event handler. The user
+ * supplies the event name, picks Local vs Net, and adds zero or more
+ * named/typed handler params (which become the node's value-output
+ * pins and the function's positional args in the generated Lua).
+ */
+const EventCustomModal: React.FC<{
+	onCancel: () => void;
+	onSubmit: (name: string, isNet: boolean, params: { name: string; type: EditorType }[]) => void;
+}> = ({ onCancel, onSubmit }) => {
+	const [name, setName] = useState('myResource:opened');
+	const [isNet, setIsNet] = useState(true);
+	const [params, setParams] = useState<{ name: string; type: EditorType }[]>([]);
+	const inputRef = useRef<HTMLInputElement>(null);
+	useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
+	const submit = () => {
+		const trimmed = name.trim();
+		if (!trimmed) return;
+		const cleaned = params
+			.map((p) => ({ name: p.name.trim(), type: p.type }))
+			.filter((p) => /^[A-Za-z_][\w]*$/.test(p.name));
+		onSubmit(trimmed, isNet, cleaned);
+	};
+	return (
+		<div className="shortcuts-modal" onClick={onCancel}>
+			<div className="shortcuts-card" style={{ minWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+				<h3 style={{ margin: '0 0 12px' }}>Custom event handler</h3>
+				<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+					<label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+						<span style={{ fontSize: 11, opacity: 0.75 }}>Event name</span>
+						<input
+							ref={inputRef}
+							className="inline-input nodrag nowheel"
+							style={{ maxWidth: 'none', padding: '4px 8px' }}
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+							onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }}
+							placeholder="e.g. myResource:opened"
+						/>
+					</label>
+					<label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+						<input type="checkbox" className="nodrag" checked={isNet} onChange={(e) => setIsNet(e.target.checked)} />
+						<span>Net event (also emit RegisterNetEvent)</span>
+					</label>
+					<ParamRowsEditor params={params} onChange={setParams} />
+				</div>
+				<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+					<button onClick={onCancel}>Cancel</button>
+					<button
+						onClick={submit}
+						style={{ background: 'var(--vscode-button-background, #0e639c)', color: 'var(--vscode-button-foreground, #fff)' }}
+					>
+						Add event
+					</button>
+				</div>
+			</div>
+		</div>
+	);
+};
+
+const CommandModalView: React.FC<{
+	onCancel: () => void;
+	onSubmit: (name: string, restricted: boolean) => void;
+}> = ({ onCancel, onSubmit }) => {
+	const [name, setName] = useState('mycmd');
+	const [restricted, setRestricted] = useState(false);
+	const inputRef = useRef<HTMLInputElement>(null);
+	useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
+	const submit = () => {
+		const trimmed = name.trim();
+		if (!trimmed) return;
+		onSubmit(trimmed, restricted);
+	};
+	return (
+		<div className="shortcuts-modal" onClick={onCancel}>
+			<div className="shortcuts-card" style={{ minWidth: 360 }} onClick={(e) => e.stopPropagation()}>
+				<h3 style={{ margin: '0 0 12px' }}>Register a command</h3>
+				<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+					<label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+						<span style={{ fontSize: 11, opacity: 0.75 }}>Command name (without /)</span>
+						<input
+							ref={inputRef}
+							className="inline-input nodrag nowheel"
+							style={{ maxWidth: 'none', padding: '4px 8px' }}
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+							onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }}
+							placeholder="e.g. mycmd"
+						/>
+					</label>
+					<label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+						<input type="checkbox" className="nodrag" checked={restricted} onChange={(e) => setRestricted(e.target.checked)} />
+						<span>Restricted (requires ace permission)</span>
+					</label>
+				</div>
+				<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+					<button onClick={onCancel}>Cancel</button>
+					<button
+						onClick={submit}
+						style={{ background: 'var(--vscode-button-background, #0e639c)', color: 'var(--vscode-button-foreground, #fff)' }}
+					>
+						Add command
+					</button>
+				</div>
+			</div>
+		</div>
+	);
+};
+
+const ParamRowsEditor: React.FC<{
+	params: { name: string; type: EditorType }[];
+	onChange: (params: { name: string; type: EditorType }[]) => void;
+}> = ({ params, onChange }) => {
+	const types: EditorType[] = ['integer', 'number', 'boolean', 'string', 'vector3', 'hash', 'entity', 'ped', 'vehicle', 'any'];
+	return (
+		<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+			<span style={{ fontSize: 11, opacity: 0.75 }}>Handler parameters</span>
+			{params.map((p, i) => (
+				<div key={i} style={{ display: 'flex', gap: 6 }}>
+					<input
+						className="inline-input nodrag nowheel"
+						style={{ flex: 1, maxWidth: 'none', padding: '3px 6px' }}
+						value={p.name}
+						placeholder="param name"
+						onChange={(e) => onChange(params.map((x, j) => (i === j ? { ...x, name: e.target.value } : x)))}
+					/>
+					<select
+						className="inline-input nodrag"
+						style={{ maxWidth: 'none', padding: '3px 6px' }}
+						value={p.type}
+						onChange={(e) => onChange(params.map((x, j) => (i === j ? { ...x, type: e.target.value as EditorType } : x)))}
+					>
+						{types.map((t) => <option key={t} value={t}>{t}</option>)}
+					</select>
+					<button onClick={() => onChange(params.filter((_, j) => j !== i))}>×</button>
+				</div>
+			))}
+			<button
+				style={{ alignSelf: 'flex-start', marginTop: 2 }}
+				onClick={() => onChange([...params, { name: `arg${params.length + 1}`, type: 'any' }])}
+			>+ add param</button>
+		</div>
+	);
+};
+
 function isInputFocused(): boolean {
 	const el = document.activeElement;
 	if (!el) return false;
@@ -965,6 +1143,13 @@ function pinKindOf(node: BNode, pinId: string, dir: 'input' | 'output'): { kind:
 		const arg = node.argPins.find((p) => p.id === pinId);
 		if (dir === 'input' && arg) return { kind: 'value', type: arg.type };
 	}
+	if (node.kind === 'command') {
+		if (dir === 'output' && (pinId === 'next' || node.outExec.some((p) => p.id === pinId))) {
+			return { kind: 'exec' };
+		}
+		const out = node.outValuePins.find((p) => p.id === pinId);
+		if (dir === 'output' && out) return { kind: 'value', type: out.type };
+	}
 	return null;
 }
 
@@ -975,6 +1160,10 @@ function pinNameOf(node: BNode, pinId: string): string | null {
 	}
 	if (node.kind === 'event') {
 		const out = (node.outValuePins ?? []).find((p) => p.id === pinId);
+		if (out) return out.name;
+	}
+	if (node.kind === 'command') {
+		const out = node.outValuePins.find((p) => p.id === pinId);
 		if (out) return out.name;
 	}
 	return null;
@@ -989,6 +1178,7 @@ function pinColorOf(edge: BEdge, doc: GraphDoc): string {
 	if (from.kind === 'pure' || from.kind === 'literal' || from.kind === 'var-get') pin = from.resultPin;
 	if (from.kind === 'exec-call') pin = from.resultPin;
 	if (from.kind === 'event') pin = (from.outValuePins ?? []).find((p) => p.id === ve.fromPinId);
+	if (from.kind === 'command') pin = from.outValuePins.find((p) => p.id === ve.fromPinId);
 	if (!pin) return '#888';
 	return PIN_COLOR_MAP[pin.type] ?? '#888';
 }
