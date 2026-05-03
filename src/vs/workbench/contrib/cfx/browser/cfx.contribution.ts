@@ -38,6 +38,12 @@ registerStatusBarContribution();
 import { registerCfxTabDecoration } from './status/cfxTabDecoration.js';
 registerCfxTabDecoration();
 
+import { registerCfxBridgeInstaller } from './bridge/cfxStudioBridgeInstaller.js';
+registerCfxBridgeInstaller();
+
+import { registerCfxMcpBridge } from './mcpBridge/cfxMcpBridgeContribution.js';
+registerCfxMcpBridge();
+
 import { registerAutoRestartContribution } from './server/autoRestart.js';
 registerAutoRestartContribution();
 

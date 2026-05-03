@@ -23,6 +23,7 @@ import { generateUuid } from '../../base/common/uuid.js';
 import { registerContextMenuListener } from '../../base/parts/contextmenu/electron-main/contextmenu.js';
 import { getDelayedChannel, ProxyChannel, StaticRouter } from '../../base/parts/ipc/common/ipc.js';
 import { CfxNodeService } from '../../workbench/contrib/cfx/node/cfxNodeServiceImpl.js';
+import { NodeMcpBridgeService } from '../../workbench/contrib/cfx/node/mcpBridgeServer.js';
 import { Server as ElectronIPCServer } from '../../base/parts/ipc/electron-main/ipc.electron.js';
 import { Client as MessagePortClient } from '../../base/parts/ipc/electron-main/ipc.mp.js';
 import { Server as NodeIPCServer } from '../../base/parts/ipc/node/ipc.net.js';
@@ -1172,6 +1173,12 @@ export class CodeApplication extends Disposable {
 		const cfxNodeService = disposables.add(new CfxNodeService());
 		const cfxNodeChannel = ProxyChannel.fromService(cfxNodeService, disposables);
 		mainProcessElectronServer.registerChannel('cfxNodeService', cfxNodeChannel);
+
+		// Cfx Studio MCP bridge (named-pipe listener for the cfx-mcp
+		// standalone binary). Same lifecycle reasons as cfxNodeService.
+		const cfxMcpBridgeService = disposables.add(new NodeMcpBridgeService());
+		const cfxMcpBridgeChannel = ProxyChannel.fromService(cfxMcpBridgeService, disposables);
+		mainProcessElectronServer.registerChannel('cfxNodeMcpBridgeService', cfxMcpBridgeChannel);
 
 		// Encryption
 		const encryptionChannel = ProxyChannel.fromService(accessor.get(IEncryptionMainService), disposables);

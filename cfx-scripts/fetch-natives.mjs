@@ -113,7 +113,19 @@ const sorted = [...byHash.values()].sort((a, b) => {
 });
 
 mkdirSync(OUT_DIR, { recursive: true });
-writeFileSync(OUT_FILE, JSON.stringify({ fetchedAt: Date.now(), natives: sorted }, null, 0));
+const payload = JSON.stringify({ fetchedAt: Date.now(), natives: sorted }, null, 0);
+writeFileSync(OUT_FILE, payload);
 
-const sizeKb = Math.round((Buffer.byteLength(JSON.stringify(sorted)) / 1024) * 10) / 10;
+const sizeKb = Math.round((Buffer.byteLength(payload) / 1024) * 10) / 10;
 console.log(`[fetch-natives] wrote ${sorted.length} natives → ${OUT_FILE} (${sizeKb} KB)`);
+
+// Mirror into the standalone cfx-mcp binary's bundled data so its
+// offline natives search stays in sync with the IDE.
+import { existsSync } from 'node:fs';
+const MCP_DATA_DIR = resolve(__dirname, '..', '..', 'cfx-mcp', 'data');
+if (existsSync(resolve(__dirname, '..', '..', 'cfx-mcp'))) {
+	mkdirSync(MCP_DATA_DIR, { recursive: true });
+	const mcpFile = join(MCP_DATA_DIR, `natives-${game}.json`);
+	writeFileSync(mcpFile, payload);
+	console.log(`[fetch-natives] mirrored to ${mcpFile}`);
+}

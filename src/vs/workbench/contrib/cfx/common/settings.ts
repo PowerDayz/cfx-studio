@@ -99,5 +99,23 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 				'Default template selected when invoking the New Resource scaffold. Users can still pick another option in the dialog.',
 			),
 		},
+		'cfx.bridge.autoInstall': {
+			type: 'boolean',
+			default: true,
+			scope: ConfigurationScope.APPLICATION,
+			description: localize(
+				'cfx.bridge.autoInstall.description',
+				'When enabled (default), Cfx Studio offers to install the cfx-studio-bridge resource on first open of a workspace. The bridge forwards client-side Lua errors to the FXServer console so the IDE (and any AI assistant) can see them. Set to false to suppress the prompt globally; the resource can still be installed via the "Cfx: Install Client Error Bridge" command.',
+			),
+		},
+		'cfx.mcp.enabled': {
+			type: 'boolean',
+			default: true,
+			scope: ConfigurationScope.APPLICATION,
+			description: localize(
+				'cfx.mcp.enabled.description',
+				'When enabled (default), Cfx Studio opens a local IPC pipe that the cfx-mcp standalone binary connects to so MCP-compatible AI clients (Claude Desktop, Claude Code, Codex, Cursor, ...) can list resources, restart them, read logs, and search natives. Disable to close the pipe.',
+			),
+		},
 	},
 });

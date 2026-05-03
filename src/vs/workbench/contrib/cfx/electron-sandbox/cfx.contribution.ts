@@ -17,6 +17,12 @@
 // sharedProcessMain.ts.
 import './cfxNodeServiceClient.js';
 
+// Side-effect import: registers INodeMcpBridgeService as a renderer-side
+// proxy over the main-process channel. The actual implementation
+// (named-pipe listener + auth + JSON-RPC framing) lives in
+// `node/mcpBridgeServer.ts` and is constructed in `vs/code/electron-main/app.ts`.
+import './mcpBridge/mcpBridgeServiceClient.js';
+
 // Side-effect import: registers IFXServerService (renderer-side
 // orchestrator that delegates spawn to ICfxNodeService).
 import './server/fxserverService.js';

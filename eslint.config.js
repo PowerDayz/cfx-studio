@@ -1120,6 +1120,13 @@ export default tseslint.config(
 						'vs/editor/~',
 						'vs/editor/contrib/*/~',
 						'vs/code/~',
+						// Cfx Studio: the main process constructs Node-side
+						// services (CfxNodeService, NodeMcpBridgeService) and
+						// registers them as ProxyChannels. These services
+						// have no DOM dependencies and ship as self-
+						// contained modules under contrib/cfx/node/.
+						'vs/workbench/contrib/cfx/node/**/*',
+						'vs/workbench/contrib/cfx/common/**/*',
 						{
 							'when': 'hasBrowser',
 							'pattern': 'vs/workbench/workbench.web.main.js'

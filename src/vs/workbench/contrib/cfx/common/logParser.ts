@@ -35,6 +35,12 @@ export interface LogEvent {
 const STARTED_RE = /Started resource (\S+)/;
 const STOPPED_RE = /Stopping resource (\S+)/;
 const ERROR_RE = /Couldn't (?:start|load) resource (\S+):/;
+// `[client:<resource>] <error>` lines come from the optional in-game
+// `cfx-studio-bridge` resource (see browser/bridge/), which forwards
+// client-side Lua errors to the server console so the IDE can see
+// them. Treated identically to a server-side error so the resource
+// row turns red and the line lands in the per-resource console tab.
+const CLIENT_ERROR_RE = /^\s*\[client:(\S+)\]\s*(.*)$/;
 const SCRIPT_PREFIX_RE = /^\s*\[script:([^\]]+)\]/;
 const GENERIC_PREFIX_RE = /^\s*\[([a-z][a-z0-9_-]*)\]/i;
 const SERVER_UP_RE = /Server is up/i;
@@ -58,6 +64,9 @@ export function parseLogLine(raw: string): LogEvent {
 	if (m) { return { raw, resourceName: m[1], kind: 'stopped' }; }
 
 	m = ERROR_RE.exec(line);
+	if (m) { return { raw, resourceName: m[1], kind: 'errored' }; }
+
+	m = CLIENT_ERROR_RE.exec(line);
 	if (m) { return { raw, resourceName: m[1], kind: 'errored' }; }
 
 	m = SCRIPT_PREFIX_RE.exec(line);
