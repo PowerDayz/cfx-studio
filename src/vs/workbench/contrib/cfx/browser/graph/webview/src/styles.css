@@ -1,0 +1,174 @@
+/* Cfx Studio fxgraph editor styles. VSCode CSS variables only — no
+   hardcoded theme colors except the per-node-kind header pills. */
+
+@import url('@xyflow/react/dist/style.css');
+
+html, body, #cfx-fxgraph-root {
+	height: 100%;
+	margin: 0;
+	padding: 0;
+	background: var(--vscode-editor-background, #1e1e1e);
+	color: var(--vscode-editor-foreground, #d4d4d4);
+	font-family: var(--vscode-font-family, sans-serif);
+	font-size: var(--vscode-font-size, 13px);
+	overflow: hidden;
+}
+
+.editor-host {
+	width: 100%;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+}
+
+.editor-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 6px 12px;
+	background: var(--vscode-sideBar-background, #252526);
+	border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+	font-size: 12px;
+}
+
+.editor-toolbar .scope-pill {
+	padding: 2px 8px;
+	border-radius: 3px;
+	background: var(--vscode-badge-background, #4d4d4d);
+	color: var(--vscode-badge-foreground, #fff);
+	font-weight: 600;
+	letter-spacing: 0.4px;
+	text-transform: uppercase;
+}
+
+.editor-toolbar button {
+	background: var(--vscode-button-secondaryBackground, #3a3a3a);
+	color: var(--vscode-button-secondaryForeground, #fff);
+	border: 1px solid var(--vscode-panel-border, #3c3c3c);
+	padding: 3px 8px;
+	font-size: 12px;
+	cursor: pointer;
+	border-radius: 3px;
+}
+.editor-toolbar button:hover {
+	background: var(--vscode-button-secondaryHoverBackground, #4a4a4a);
+}
+
+.canvas {
+	flex: 1;
+	position: relative;
+	min-height: 0;
+}
+
+.bnode {
+	background: var(--vscode-editorWidget-background, #252526);
+	border: 1px solid var(--vscode-editorWidget-border, #454545);
+	border-radius: 4px;
+	min-width: 180px;
+	font-size: 12px;
+	overflow: hidden;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.bnode .header {
+	padding: 4px 8px;
+	background: var(--vscode-titleBar-activeBackground, #3c3c3c);
+	color: var(--vscode-titleBar-activeForeground, #fff);
+	font-weight: 600;
+	border-bottom: 1px solid var(--vscode-editorWidget-border, #454545);
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.bnode.kind-event .header { background: #5d3a99; color: #fff; }
+.bnode.kind-control .header { background: #8a5a00; color: #fff; }
+.bnode.kind-pure .header { background: #2c5d99; color: #fff; }
+.bnode.kind-literal .header { background: #555; color: #fff; }
+.bnode.kind-var-get .header,
+.bnode.kind-var-set .header { background: #7a4f8a; color: #fff; }
+
+.bnode .pin-row {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0;
+	padding: 4px 0;
+	min-height: 22px;
+	align-items: center;
+}
+.bnode .pin-row.exec { grid-template-columns: 1fr 1fr; }
+
+.bnode .pin {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 0 8px;
+	font-size: 12px;
+	white-space: nowrap;
+}
+.bnode .pin.left { justify-content: flex-start; }
+.bnode .pin.right { justify-content: flex-end; }
+
+.bnode .inline-input {
+	background: var(--vscode-input-background, #3c3c3c);
+	color: var(--vscode-input-foreground, #fff);
+	border: 1px solid var(--vscode-input-border, transparent);
+	padding: 1px 4px;
+	font-size: 11px;
+	border-radius: 2px;
+	max-width: 80px;
+}
+.bnode .inline-input:focus {
+	outline: 1px solid var(--vscode-focusBorder, #007acc);
+}
+
+.quickadd {
+	position: absolute;
+	background: var(--vscode-quickInput-background, #252526);
+	border: 1px solid var(--vscode-panel-border, #3c3c3c);
+	border-radius: 6px;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+	z-index: 1000;
+	min-width: 320px;
+	max-height: 360px;
+	display: flex;
+	flex-direction: column;
+}
+.quickadd input {
+	background: var(--vscode-input-background, #3c3c3c);
+	color: var(--vscode-input-foreground, #fff);
+	border: none;
+	border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+	padding: 6px 10px;
+	font-size: 13px;
+}
+.quickadd ul {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	overflow-y: auto;
+	flex: 1;
+}
+.quickadd li {
+	padding: 5px 10px;
+	cursor: pointer;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.quickadd li:hover,
+.quickadd li.selected {
+	background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+.quickadd li .name { font-weight: 500; }
+.quickadd li .meta { font-size: 11px; color: var(--vscode-descriptionForeground, #999); }
+
+.placeholder {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--vscode-descriptionForeground, #999);
+	font-size: 13px;
+	pointer-events: none;
+}
