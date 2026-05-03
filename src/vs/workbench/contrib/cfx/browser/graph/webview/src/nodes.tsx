@@ -299,6 +299,9 @@ const PinRow: React.FC<PinRowProps> = ({ pin, side, missing }) => {
 	);
 };
 
+// Visual styling only — vertical/horizontal positioning is owned by
+// styles.css so each handle anchors to its own pin-row's vertical
+// centre (otherwise React-Flow stacks every handle at the node centre).
 const ExecHandle: React.FC<{ id: string; type: 'source' | 'target' }> = ({ id, type }) => (
 	<Handle
 		id={id}
@@ -313,7 +316,6 @@ const ExecHandle: React.FC<{ id: string; type: 'source' | 'target' }> = ({ id, t
 			borderBottom: '6px solid transparent',
 			borderLeft: type === 'source' ? '8px solid #fff' : '0',
 			borderRight: type === 'target' ? '8px solid #fff' : '0',
-			transform: type === 'source' ? 'translate(50%, -50%)' : 'translate(-50%, -50%)',
 		}}
 	/>
 );
