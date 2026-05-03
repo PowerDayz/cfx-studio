@@ -382,6 +382,19 @@
 	width: 28px;
 }
 
+/* Cfx Studio: when a tab carries an extra decoration button (e.g. the */
+/* per-resource Restart-Script icon), let the action area widen and give */
+/* each button some breathing room on both sides so the cluster doesn't */
+/* feel cramped against the close × or against the tab label. */
+.monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab.has-tab-decorations > .tab-actions,
+.monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab.has-tab-decorations > .tab-actions > .monaco-action-bar {
+	width: auto;
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab.has-tab-decorations > .tab-actions > .monaco-action-bar .actions-container > .action-item {
+	margin: 0 4px;
+}
+
 .monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab.tab-actions-right.sizing-shrink > .tab-actions,
 .monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab.tab-actions-right.sizing-fixed > .tab-actions {
 	flex: 0;

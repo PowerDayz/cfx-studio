@@ -1550,6 +1550,7 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		// These render to the LEFT of the close (×) button — same row,
 		// same hover treatment, same disposal lifecycle.
 		const decorationActions = this.buildTabDecorationActions(editor);
+		tabContainer.classList.toggle('has-tab-decorations', decorationActions.length > 0);
 
 		// We must rebuild the action bar whenever decorations differ
 		// from what's currently rendered, so the cheap `hasAction` fast
