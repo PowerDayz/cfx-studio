@@ -13,11 +13,16 @@ const pall = require('p-all');
 
 const { all, copyrightFilter, unicodeFilter, indentationFilter, tsFormattingFilter, eslintFilter, stylelintFilter } = require('./filters');
 
+// Header check accepts either the original Microsoft Corporation banner
+// or the Cfx Studio banner used by this fork's first-party contributions.
+// Entries marked `pattern` are tested as RegExp; literal strings must
+// match exactly. The license-text suffix is optional so cfx files with a
+// shorter `Licensed under the MIT License.` form pass too.
 const copyrightHeaderLines = [
-	'/*---------------------------------------------------------------------------------------------',
-	' *  Copyright (c) Microsoft Corporation. All rights reserved.',
-	' *  Licensed under the MIT License. See License.txt in the project root for license information.',
-	' *--------------------------------------------------------------------------------------------*/',
+	{ literal: '/*---------------------------------------------------------------------------------------------' },
+	{ pattern: /^ \*  Copyright \(c\) (Microsoft Corporation|Cfx Studio)\. All rights reserved\.$/ },
+	{ pattern: /^ \*  Licensed under the MIT License(\. See License\.txt in the project root for license information)?\.$/ },
+	{ literal: ' *--------------------------------------------------------------------------------------------*/' },
 ];
 
 function hygiene(some, linting = true) {
@@ -62,8 +67,11 @@ function hygiene(some, linting = true) {
 				}
 			}
 			// Please do not add symbols that resemble ASCII letters!
+			// Cfx-side additions (typography): – — ' ' " " — common
+			// punctuation used in our doc-comments. Adding them globally
+			// rather than per-file via // allow-any-unicode-next-line.
 			// eslint-disable-next-line no-misleading-character-class
-			const m = /([^\t\n\r\x20-\x7E⊃⊇✔︎✓🎯⚠️🛑🔴🚗🚙🚕🎉✨❗⇧⌥⌘×÷¦⋯…↑↓￫→←↔⟷·•●◆▼⟪⟫┌└├⏎↩√φ]+)/g.exec(line);
+			const m = /([^\t\n\r\x20-\x7E⊃⊇✔︎✓🎯⚠️🛑🔴🚗🚙🚕🎉✨❗⇧⌥⌘×÷¦⋯…↑↓￫→←↔⟷·•●◆▼⟪⟫┌└├⏎↩√φ–—‘’“”]+)/g.exec(line);
 			if (m) {
 				console.error(
 					file.relative + `(${i + 1},${m.index + 1}): Unexpected unicode character: "${m[0]}" (charCode: ${m[0].charCodeAt(0)}). To suppress, use // allow-any-unicode-next-line`
@@ -101,7 +109,12 @@ function hygiene(some, linting = true) {
 		const lines = file.__lines;
 
 		for (let i = 0; i < copyrightHeaderLines.length; i++) {
-			if (lines[i] !== copyrightHeaderLines[i]) {
+			const expected = copyrightHeaderLines[i];
+			const actual = lines[i];
+			const ok = expected.literal !== undefined
+				? actual === expected.literal
+				: expected.pattern.test(actual);
+			if (!ok) {
 				console.error(file.relative + ': Missing or bad copyright statement');
 				errorCount++;
 				break;
