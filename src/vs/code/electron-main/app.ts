@@ -22,6 +22,7 @@ import { URI } from '../../base/common/uri.js';
 import { generateUuid } from '../../base/common/uuid.js';
 import { registerContextMenuListener } from '../../base/parts/contextmenu/electron-main/contextmenu.js';
 import { getDelayedChannel, ProxyChannel, StaticRouter } from '../../base/parts/ipc/common/ipc.js';
+import { CfxNodeService } from '../../workbench/contrib/cfx/node/cfxNodeServiceImpl.js';
 import { Server as ElectronIPCServer } from '../../base/parts/ipc/electron-main/ipc.electron.js';
 import { Client as MessagePortClient } from '../../base/parts/ipc/electron-main/ipc.mp.js';
 import { Server as NodeIPCServer } from '../../base/parts/ipc/node/ipc.net.js';
@@ -1164,6 +1165,13 @@ export class CodeApplication extends Disposable {
 		// Process
 		const processChannel = ProxyChannel.fromService(accessor.get(IProcessMainService), disposables);
 		mainProcessElectronServer.registerChannel('process', processChannel);
+
+		// Cfx Studio Node service (FXServer spawn + 7z extract). Lives in
+		// main process because the shared process registration race was
+		// unreliable; main is always up before any renderer connects.
+		const cfxNodeService = disposables.add(new CfxNodeService());
+		const cfxNodeChannel = ProxyChannel.fromService(cfxNodeService, disposables);
+		mainProcessElectronServer.registerChannel('cfxNodeService', cfxNodeChannel);
 
 		// Encryption
 		const encryptionChannel = ProxyChannel.fromService(accessor.get(IEncryptionMainService), disposables);

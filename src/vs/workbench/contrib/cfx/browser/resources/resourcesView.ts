@@ -23,9 +23,12 @@ import { IViewDescriptorService } from '../../../../common/views.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
+import { INativeHostService } from '../../../../../platform/native/common/native.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { joinPath } from '../../../../../base/common/resources.js';
+import { Action, Separator } from '../../../../../base/common/actions.js';
 import { IServerCfgService } from '../../common/serverCfg.js';
+import { IFXServerService } from '../../common/fxserver.js';
 import {
 	IResourceDiscoveryService,
 	IResourceModel,
@@ -68,6 +71,9 @@ export class ResourcesViewPane extends ViewPane {
 		@ICommandService private readonly commandService: ICommandService,
 		@IFileService private readonly fileService: IFileService,
 		@IServerCfgService private readonly serverCfgService: IServerCfgService,
+		@IFXServerService private readonly fxServer: IFXServerService,
+		@INativeHostService private readonly nativeHostService: INativeHostService,
+		@IContextMenuService private readonly menuService: IContextMenuService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, telemetryService, hoverService);
 
@@ -165,13 +171,18 @@ export class ResourcesViewPane extends ViewPane {
 			manifest.title = 'Uses the deprecated __resource.lua manifest. Consider renaming to fxmanifest.lua.';
 		}
 
-		// Click on row body opens manifest. Click on chevron toggles expand
-		// (handled above with stopPropagation).
-		this._register(dom.addDisposableListener(row, dom.EventType.CLICK, () => this.openManifest(resource)));
+		// Click on row body opens entry file. Click on chevron toggles
+		// expand (handled above with stopPropagation).
+		this._register(dom.addDisposableListener(row, dom.EventType.CLICK, () => this.openEntryFile(resource)));
+		this._register(dom.addDisposableListener(row, dom.EventType.CONTEXT_MENU, (e: MouseEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			this.showRowContextMenu(resource, e);
+		}));
 		this._register(dom.addDisposableListener(row, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			if (e.key === 'Enter' || e.key === ' ') {
 				e.preventDefault();
-				this.openManifest(resource);
+				this.openEntryFile(resource);
 			} else if (e.key === 'ArrowRight' && !isExpanded) {
 				e.preventDefault();
 				this.toggleExpand(resource);
@@ -302,16 +313,114 @@ export class ResourcesViewPane extends ViewPane {
 		await this.serverCfgService.reorderEnsures(filtered);
 	}
 
-	private async openManifest(resource: IResourceModel): Promise<void> {
-		// Notify the console panel (Phase D) so it surfaces a per-resource
-		// tab. The command is a no-op when the console subsystem isn't
-		// loaded yet (e.g. during the brief window before Phase D's
-		// contribution wires up).
+	private async openEntryFile(resource: IResourceModel): Promise<void> {
+		// Notify the console panel so it surfaces a per-resource tab.
 		this.commandService.executeCommand('cfx.console.focusResource', resource.name).catch(() => { /* */ });
 
+		const target = await this.pickEntryFile(resource);
+		await this.editorService.openEditor({ resource: target, options: { preserveFocus: false } });
+	}
+
+	private async openManifest(resource: IResourceModel): Promise<void> {
 		const manifestName = resource.manifestKind === '__resource' ? '__resource.lua' : 'fxmanifest.lua';
 		const uri = joinPath(resource.folder, manifestName);
 		await this.editorService.openEditor({ resource: uri, options: { preserveFocus: false } });
+	}
+
+	/**
+	 * Decide which file to open when a resource row is clicked. Order:
+	 *   1. If exactly one .fxgraph at the resource root → that.
+	 *   2. fxmanifest.lua's first client_scripts / client_script entry.
+	 *   3. fxmanifest.lua's first server_scripts / server_script entry.
+	 *   4. client.{lua,ts,js} or server.{lua,ts,js} at the root.
+	 *   5. Fallback: the manifest itself.
+	 */
+	private async pickEntryFile(resource: IResourceModel): Promise<URI> {
+		const manifestName = resource.manifestKind === '__resource' ? '__resource.lua' : 'fxmanifest.lua';
+		const manifestUri = joinPath(resource.folder, manifestName);
+
+		let stat;
+		try {
+			stat = await this.fileService.resolve(resource.folder, { resolveMetadata: false });
+		} catch {
+			return manifestUri;
+		}
+
+		const childNames = new Set((stat.children ?? []).filter((c) => !c.isDirectory).map((c) => c.name));
+
+		const fxgraphs = [...childNames].filter((n) => n.endsWith('.fxgraph'));
+		if (fxgraphs.length === 1) {
+			return joinPath(resource.folder, fxgraphs[0]);
+		}
+
+		try {
+			const manifestText = (await this.fileService.readFile(manifestUri)).value.toString();
+			const fromClient = firstScriptEntry(manifestText, 'client');
+			if (fromClient && childNames.has(fromClient)) {
+				return joinPath(resource.folder, fromClient);
+			}
+			const fromServer = firstScriptEntry(manifestText, 'server');
+			if (fromServer && childNames.has(fromServer)) {
+				return joinPath(resource.folder, fromServer);
+			}
+		} catch {
+			// Manifest unreadable; fall through to filename heuristics.
+		}
+
+		for (const candidate of ['client.lua', 'client.ts', 'client.js', 'server.lua', 'server.ts', 'server.js']) {
+			if (childNames.has(candidate)) return joinPath(resource.folder, candidate);
+		}
+
+		return manifestUri;
+	}
+
+	private showRowContextMenu(resource: IResourceModel, e: MouseEvent): void {
+		const actions: (Action | Separator)[] = [];
+
+		actions.push(new Action('cfx.ctx.openEntry', localize('cfx.ctx.open', 'Open'), undefined, true, async () => {
+			await this.openEntryFile(resource);
+		}));
+		actions.push(new Action('cfx.ctx.openManifest', localize('cfx.ctx.openManifest', 'Open fxmanifest.lua'), undefined, true, async () => {
+			await this.openManifest(resource);
+		}));
+		actions.push(new Action('cfx.ctx.reveal', localize('cfx.ctx.reveal', 'Reveal in File Explorer'), undefined, true, async () => {
+			await this.nativeHostService.showItemInFolder(resource.folder.fsPath);
+		}));
+		actions.push(new Separator());
+
+		if (resource.ensureState === 'in-ensure') {
+			actions.push(new Action('cfx.ctx.removeEnsure', localize('cfx.ctx.removeEnsure', 'Remove from Ensure Chain'), undefined, true, async () => {
+				await this.serverCfgService.removeEnsure(resource.name);
+			}));
+		} else {
+			actions.push(new Action('cfx.ctx.addEnsure', localize('cfx.ctx.addEnsure', 'Add to Ensure Chain'), undefined, true, async () => {
+				await this.serverCfgService.addEnsure(resource.name);
+			}));
+		}
+
+		const isServerRunning = this.fxServer.state === 'running';
+		actions.push(new Action(
+			'cfx.ctx.restart',
+			localize('cfx.ctx.restart', 'Restart Resource'),
+			undefined,
+			isServerRunning,
+			async () => {
+				await this.fxServer.restartResource(resource.name);
+			},
+		));
+
+		actions.push(new Separator());
+		actions.push(new Action('cfx.ctx.rename', localize('cfx.ctx.rename', 'Rename Resource'), undefined, true, async () => {
+			await this.commandService.executeCommand('cfx.resource.rename', resource.name);
+		}));
+		actions.push(new Action('cfx.ctx.delete', localize('cfx.ctx.delete', 'Delete Resource'), undefined, true, async () => {
+			await this.commandService.executeCommand('cfx.resource.delete', resource.name);
+		}));
+
+		this.menuService.showContextMenu({
+			getAnchor: () => ({ x: e.clientX, y: e.clientY }),
+			getActions: () => actions,
+		});
 	}
 }
 
@@ -365,4 +474,23 @@ function runtimeTooltipLine(state: RuntimeState): string {
 		default:
 			return localize('cfx.tooltip.runtime.idle', 'Idle — server is not running, or this resource is not yet started.');
 	}
+}
+
+/**
+ * Pull the first filename from `client_scripts {...}` / `client_script
+ * '...'` (or the server_ equivalent) in fxmanifest.lua text. Returns
+ * undefined if none found. Deliberately simple — Cfx manifests almost
+ * always use one of these two forms; computed lists fall through.
+ */
+function firstScriptEntry(manifestText: string, side: 'client' | 'server'): string | undefined {
+	const blockRe = new RegExp(`(?:^|\\n)\\s*${side}_scripts?\\s*\\{([\\s\\S]*?)\\}`, 'i');
+	const blockMatch = blockRe.exec(manifestText);
+	if (blockMatch) {
+		const innerMatch = /['"]([^'"\n]+)['"]/.exec(blockMatch[1]);
+		if (innerMatch) return innerMatch[1].trim();
+	}
+	const singleRe = new RegExp(`(?:^|\\n)\\s*${side}_scripts?\\s+['"]([^'"\\n]+)['"]`, 'i');
+	const singleMatch = singleRe.exec(manifestText);
+	if (singleMatch) return singleMatch[1].trim();
+	return undefined;
 }
