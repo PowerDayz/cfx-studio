@@ -82,7 +82,13 @@ const node20Dir = await ensureNode20();
 const vsEnv = await detectVsInstall();
 const buildEnv = { ...process.env, ...vsEnv };
 delete buildEnv.NoDefaultCurrentDirectoryInExePath;
-buildEnv.PATH = `${node20Dir}${delimiter}${buildEnv.PATH}`;
+// On Windows process.env preserves the original env-var case (`Path`),
+// but is read case-insensitively. Spreading it gives us an object keyed
+// `Path`; assigning to `PATH` would create a SECOND key and the spawned
+// process inherits ambiguous values. Find whichever case actually
+// exists and prepend node20 onto that key.
+const pathKey = Object.keys(buildEnv).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+buildEnv[pathKey] = `${node20Dir}${delimiter}${buildEnv[pathKey] ?? ''}`;
 
 if (!NO_REBUILD) {
 	step('build fxgraph webview (Vite)');
