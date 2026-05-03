@@ -124,7 +124,12 @@ function spawnLauncher() {
 		fail(`scripts/code.bat not found at ${codeBat}`);
 	}
 	console.log(`[cfx-dev] launching ${codeBat}`);
-	const proc = spawn('cmd.exe', ['/c', codeBat], {
+	// Spawn cmd by absolute path. We override PATH to put portable Node
+	// 20 first, which can shadow C:\Windows\System32 on machines whose
+	// system PATH doesn't include it explicitly — Node would then fail
+	// to resolve `cmd.exe`. ComSpec is set by Windows on every session.
+	const cmdExe = process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
+	const proc = spawn(cmdExe, ['/c', codeBat], {
 		cwd: FORK,
 		env: buildEnv,
 		stdio: 'inherit',
