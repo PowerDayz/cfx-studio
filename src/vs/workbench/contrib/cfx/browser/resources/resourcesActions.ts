@@ -179,8 +179,40 @@ async function validateResourceName(
 	return null;
 }
 
+class ShowStatusLegendAction extends Action2 {
+	static readonly ID = 'cfx.resources.showStatusLegend';
+	constructor() {
+		super({
+			id: ShowStatusLegendAction.ID,
+			title: localize2('cfx.resources.showStatusLegend', 'Cfx: Show Resources Status Legend'),
+			category: localize2('cfx.category', 'Cfx Studio'),
+			f1: true,
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const notification = accessor.get(INotificationService);
+		const lines = [
+			'Cfx Studio — Resources status legend',
+			'',
+			'Ensure-chain (will the resource start when the server starts?):',
+			'  • Bright name + hollow circle  =  in ensure chain (server.cfg has "ensure <name>")',
+			'  • Greyed name + circle-with-slash  =  NOT in ensure chain',
+			'',
+			'Runtime state (what is the resource doing right now?):',
+			'  • Hollow circle (default colour)  =  idle (server not running, or resource not yet started)',
+			'  • Filled green pass icon  =  running',
+			'  • Yellow spinner  =  starting / stopping in progress',
+			'  • Red error icon  =  errored — open Cfx Console for details',
+			'',
+			'Tip: hover any resource row for a per-row tooltip with the same info.',
+		];
+		notification.info(lines.join('\n'));
+	}
+}
+
 export function registerResourceActions(): void {
 	registerAction2(RenameResourceAction);
 	registerAction2(DeleteResourceAction);
 	registerAction2(ReorderEnsureChainAction);
+	registerAction2(ShowStatusLegendAction);
 }
