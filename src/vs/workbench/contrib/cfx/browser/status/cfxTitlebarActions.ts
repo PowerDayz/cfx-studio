@@ -4,7 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Codicon } from '../../../../../base/common/codicons.js';
+import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import {
@@ -177,6 +179,17 @@ export class RestartCurrentResourceAction extends Action2 {
 			icon: cfxIconRestartResource,
 			precondition: CFX_ACTIVE_RESOURCE_KEY.notEqualsTo(''),
 			f1: true,
+			// Ctrl+R / Cmd+R while editing a file inside a Cfx resource
+			// restarts that resource. Outside a resource (welcome page,
+			// server.cfg at workspace root, etc.) the binding falls
+			// through to the workbench's existing handler (Open Recent
+			// in production, Reload Window in dev) — that's why the
+			// `when` clause matches the action's own precondition.
+			keybinding: {
+				primary: KeyMod.CtrlCmd | KeyCode.KeyR,
+				when: CFX_ACTIVE_RESOURCE_KEY.notEqualsTo(''),
+				weight: KeybindingWeight.WorkbenchContrib + 100,
+			},
 		});
 	}
 	/**
