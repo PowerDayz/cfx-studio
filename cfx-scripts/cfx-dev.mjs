@@ -95,7 +95,7 @@ if (!NO_REBUILD) {
 	run('node cfx-scripts/build-fxgraph-webview.mjs', { cwd: FORK });
 
 	step('build cfx-mcp standalone binary');
-	const mcpRoot = resolve(FORK, '..', 'cfx-mcp');
+	const mcpRoot = join(FORK, 'cfx-mcp');
 	if (existsSync(mcpRoot)) {
 		if (!existsSync(join(mcpRoot, 'node_modules'))) {
 			run('npm install --no-audit --no-fund', { cwd: mcpRoot, env: buildEnv });

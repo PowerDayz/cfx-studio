@@ -119,11 +119,12 @@ writeFileSync(OUT_FILE, payload);
 const sizeKb = Math.round((Buffer.byteLength(payload) / 1024) * 10) / 10;
 console.log(`[fetch-natives] wrote ${sorted.length} natives → ${OUT_FILE} (${sizeKb} KB)`);
 
-// Mirror into the standalone cfx-mcp binary's bundled data so its
+// Mirror into the in-tree cfx-mcp binary's bundled data so its
 // offline natives search stays in sync with the IDE.
 import { existsSync } from 'node:fs';
-const MCP_DATA_DIR = resolve(__dirname, '..', '..', 'cfx-mcp', 'data');
-if (existsSync(resolve(__dirname, '..', '..', 'cfx-mcp'))) {
+const MCP_ROOT = resolve(__dirname, '..', 'cfx-mcp');
+if (existsSync(MCP_ROOT)) {
+	const MCP_DATA_DIR = join(MCP_ROOT, 'data');
 	mkdirSync(MCP_DATA_DIR, { recursive: true });
 	const mcpFile = join(MCP_DATA_DIR, `natives-${game}.json`);
 	writeFileSync(mcpFile, payload);

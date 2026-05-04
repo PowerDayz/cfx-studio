@@ -1,0 +1,23 @@
+{
+	"name": "cfx-mcp",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "MCP server that exposes Cfx Studio (FXServer state, logs, resources, FiveM/RedM natives) to AI clients (Claude Desktop, Claude Code, Codex, Cursor, Cline, …).",
+	"main": "dist/index.js",
+	"bin": {
+		"cfx-mcp": "bin/cfx-mcp.cjs"
+	},
+	"scripts": {
+		"build": "node scripts/build.mjs",
+		"start": "node dist/index.js"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^20.11.0",
+		"esbuild": "^0.21.5",
+		"typescript": "^5.4.0"
+	}
+}

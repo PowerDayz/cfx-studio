@@ -34,3 +34,8 @@ src/vs/workbench/contrib/cfx/browser/graph/media/
 # generated lockfile churns and adds nothing reviewable.
 src/vs/workbench/contrib/cfx/browser/graph/webview/package-lock.json
 src/vs/workbench/contrib/cfx/browser/graph/webview/node_modules/
+
+# cfx-mcp standalone binary build output. The bundled natives JSON
+# (cfx-mcp/data/natives-*.json) IS tracked so a fresh clone has a
+# working offline binary without needing cfx:fetch-natives first.
+cfx-mcp/dist/

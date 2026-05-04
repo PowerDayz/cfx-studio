@@ -13,7 +13,7 @@ search the FiveM / RedM natives catalogue.
 ### 1a. Build the binary
 
 ```sh
-cd D:/txData/FivemRetard/cfx-mcp
+cd D:/txData/FivemRetard/cfx-studio/cfx-mcp
 npm install      # only the first time
 npm run build    # produces dist/index.js + copies natives JSON
 ```
@@ -25,8 +25,8 @@ haven't run dev recently or you're prepping a fresh machine.
 Verify:
 
 ```sh
-ls D:/txData/FivemRetard/cfx-mcp/dist/index.js
-ls D:/txData/FivemRetard/cfx-mcp/data/natives-fivem.json
+ls D:/txData/FivemRetard/cfx-studio/cfx-mcp/dist/index.js
+ls D:/txData/FivemRetard/cfx-studio/cfx-mcp/data/natives-fivem.json
 ```
 
 Both should exist.
@@ -51,7 +51,7 @@ create `.mcp.json` at `D:/txData/FivemRetard/.mcp.json`:
 {
 	"mcpServers": {
 		"cfx-studio": {
-			"command": "D:\\txData\\FivemRetard\\cfx-mcp\\bin\\cfx-mcp.cmd"
+			"command": "D:\\txData\\FivemRetard\\cfx-studio\\cfx-mcp\\bin\\cfx-mcp.cmd"
 		}
 	}
 }
@@ -66,9 +66,9 @@ For other clients see `cfx-mcp/README.md` — same JSON shape.
 
 ## 2. Daily flow
 
-1. Start Cfx Studio: from `D:/txData/FivemRetard/ide/` (or wherever
-   you keep it) run `npm run cfx:dev:relaunch`. Make sure it's running
-   while you want the AI to use the live tools.
+1. Start Cfx Studio: from `D:/txData/FivemRetard/cfx-studio/` run
+   `npm run cfx:dev:relaunch` (or `cfx:dev` for a full rebuild).
+   Make sure it's running while you want the AI to use the live tools.
 2. Start FXServer from inside the IDE (the title-bar Start button).
 3. Open Claude Code in `D:/txData/FivemRetard/`.
 4. In the chat, run `/mcp` — `cfx-studio` should appear with seven
