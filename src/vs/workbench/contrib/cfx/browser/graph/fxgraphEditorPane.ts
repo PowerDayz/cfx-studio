@@ -82,11 +82,11 @@ export class FxGraphEditorPane extends EditorPane {
 		this._register(this.diagnosticsService.onDidChangeDiagnostics((e) => {
 			if (!this.currentResource) { return; }
 			if (e.resource.toString() !== this.currentResource.toString()) { return; }
-			this.postOrBuffer({ type: 'diagnostics', diagnostics: e.diagnostics });
+			this.postIfReady({ type: 'diagnostics', diagnostics: e.diagnostics });
 		}));
 	}
 
-	private postOrBuffer(msg: HostToWebviewMessage): void {
+	private postIfReady(msg: HostToWebviewMessage): void {
 		if (this.webviewReady) {
 			this.webviewMD.value?.postMessage(msg);
 		}
@@ -170,6 +170,11 @@ export class FxGraphEditorPane extends EditorPane {
 			clearTimeout(this.saveTimer);
 			this.saveTimer = undefined;
 			void this.flushSave();
+		}
+		// Release per-URI diagnostics so closed files don't leak entries
+		// in the diagnostics service's internal Map.
+		if (this.currentResource) {
+			this.diagnosticsService.clear(this.currentResource);
 		}
 		this.pendingInit = undefined;
 		this.pendingSaveDoc = undefined;
