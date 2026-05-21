@@ -175,8 +175,7 @@ integration step that takes longer than the work itself.
 
 ## 12. Keep memory current
 
-The `memory/` directory under
-`C:\Users\jonas\.claude\projects\D--txData-FivemRetard\memory\` is the
+The `memory/` directory in this project's Claude Code agent state is the
 across-session brain. Every fresh sub-agent and every future-you reads
 no project history except what's in there.
 
@@ -202,8 +201,7 @@ will still be true next month.
   workspace from `server.cfg` `gamename`, with per-resource override via
   `fxmanifest.lua` `game`. No UI toggle.
 - The IDE is a **single self-contained fork** of microsoft/vscode at
-  `https://github.com/PowerDayz/cfx-studio`, cloned to
-  `D:/txData/FivemRetard/cfx-studio/`. Microsoft contributions Cfx
+  `https://github.com/PowerDayz/cfx-studio`. Microsoft contributions Cfx
   Studio doesn't ship are deleted from history; the Cfx contribution
   lives at `cfx-studio/src/vs/workbench/contrib/cfx/`. The shared TS
   libraries (visual codegen, natives index, server-cfg parser, natives
@@ -218,8 +216,8 @@ will still be true next month.
 - **No bundled extensions.** There is no `extensions/` directory inside
   the cfx contribution. The extension host is only used for third-party
   language servers we shell out to (e.g. sumneko/lua-language-server).
-- `D:/txData/FivemRetard/_deprecated-extensions/` exists as **read-only
-  historical port reference** only — it holds the previous
+- A sibling `_deprecated-extensions/` directory (outside this repo)
+  exists as **read-only historical port reference** only — it holds the previous
   bundled-extension architecture (`fivem-studio`, `fivem-lua`). Do not
   add code there, do not wire it into the build, do not import from it
   at runtime. Delete the whole directory once you're confident nothing

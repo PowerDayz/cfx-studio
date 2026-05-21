@@ -79,7 +79,7 @@ itself is no longer in `server.cfg`. Don't try to revive it.
 ## 2. Repo layout
 
 ```
-D:/txData/FivemRetard/                    # also a working FiveM/RedM server-data folder
+<server-data>/                            # also a working FiveM/RedM server-data folder
 ├── README.md                             # high-level intro, points here
 ├── ONBOARDING.md                         # this file
 ├── server.cfg                            # for testing the IDE against a real server
@@ -234,7 +234,7 @@ logic into `vscode/src/vs/workbench/contrib/cfx/` is the open work.
 
 Cfx Studio is a long-lived fork of microsoft/vscode at
 `https://github.com/PowerDayz/cfx-studio`, cloned to
-`D:/txData/FivemRetard/cfx-studio/`. The fork has two remotes:
+`<server-data>/cfx-studio/`. The fork has two remotes:
 
 - `origin` → `https://github.com/PowerDayz/cfx-studio.git` (our fork)
 - `upstream` → `https://github.com/microsoft/vscode.git` (Microsoft)
@@ -251,7 +251,7 @@ source on disk is the source we run.
 
 1. Edit files under `cfx-studio/src/vs/workbench/contrib/cfx/...` (or
    anywhere else in the fork).
-2. From `D:/txData/FivemRetard/cfx-studio/`, run `npm run cfx:dev` to
+2. From `<server-data>/cfx-studio/`, run `npm run cfx:dev` to
    recompile and launch (~3 min on a warm cache, ~15 min first run).
 3. When happy, `git add … && git commit -m "…"`. The pre-commit hook
    (husky → `npm run precommit`) runs the fork's relaxed hygiene check;
@@ -280,7 +280,7 @@ truth in the sibling `shared/` workspaces and the webview's `src/`.
 ## 7. The fast iteration loop (verified working)
 
 ```sh
-cd D:/txData/FivemRetard/cfx-studio
+cd <server-data>/cfx-studio
 npm run cfx:dev                       # first run: ~3-15 min, subsequent: ~1-3 min
 # → Electron window opens as "Cfx Studio Dev"
 # → edit any source under src/vs/workbench/contrib/cfx/ (or anywhere else)
@@ -311,11 +311,11 @@ mode appends `-dev` to the configured `dataFolderName`.
 
 ## 8. The first thing a fresh agent should do
 
-1. Read `D:/txData/FivemRetard/README.md` and this file in full.
-2. Confirm `D:/txData/FivemRetard/cfx-studio/` exists and is on `main`
+1. Read `<server-data>/README.md` and this file in full.
+2. Confirm `<server-data>/cfx-studio/` exists and is on `main`
    tracking `origin` = `https://github.com/PowerDayz/cfx-studio.git`.
    If missing, clone it there.
-3. From `D:/txData/FivemRetard/cfx-studio/`, run `npm install` if needed,
+3. From `<server-data>/cfx-studio/`, run `npm install` if needed,
    then `npm run cfx:dev` to confirm the build works end-to-end.
 4. For any change ask the user the planning question described in
    `CLAUDE.md` §1, then make the change as a normal git commit on

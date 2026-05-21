@@ -1,79 +1,95 @@
-# Visual Studio Code - Open Source ("Code - OSS")
+# Cfx Studio
 
-[![Feature Requests](https://img.shields.io/github/issues/microsoft/vscode/feature-request.svg)](https://github.com/microsoft/vscode/issues?q=is%3Aopen+is%3Aissue+label%3Afeature-request+sort%3Areactions-%2B1-desc)
-[![Bugs](https://img.shields.io/github/issues/microsoft/vscode/bug.svg)](https://github.com/microsoft/vscode/issues?utf8=✓&q=is%3Aissue+is%3Aopen+label%3Abug)
-[![Gitter](https://img.shields.io/badge/chat-on%20gitter-yellow.svg)](https://gitter.im/Microsoft/vscode)
+A desktop IDE for **FiveM and RedM** resource development. Cfx Studio is a
+fork of [Visual Studio Code](https://github.com/microsoft/vscode)
+(`Code - OSS`, MIT) with the editing core kept intact and a first-party
+Cfx development environment built directly into the workbench.
 
-## The Repository
+FiveM and RedM are equal first-class targets. The game mode is detected
+per workspace from `server.cfg` (`gamename`), with a per-resource
+override from each `fxmanifest.lua` (`game`). There is no UI toggle.
 
-This repository ("`Code - OSS`") is where we (Microsoft) develop the [Visual Studio Code](https://code.visualstudio.com) product together with the community. Not only do we work on code and issues here, we also publish our [roadmap](https://github.com/microsoft/vscode/wiki/Roadmap), [monthly iteration plans](https://github.com/microsoft/vscode/wiki/Iteration-Plans), and our [endgame plans](https://github.com/microsoft/vscode/wiki/Running-the-Endgame). This source code is available to everyone under the standard [MIT license](https://github.com/microsoft/vscode/blob/main/LICENSE.txt).
+> Status: in active development. Cfx Studio is not yet packaged as a
+> signed installer — it currently runs from source via the dev build.
 
-## Visual Studio Code
+## What it does
 
-<p align="center">
-  <img alt="VS Code in action" src="https://user-images.githubusercontent.com/35271042/118224532-3842c400-b438-11eb-923d-a5f66fa6785a.png">
-</p>
+- **Resources view** — replaces the file Explorer with a tree of every
+  folder containing an `fxmanifest.lua`, with running / stopped /
+  errored state badges driven by FXServer log parsing.
+- **FXServer manager** — Play / Stop / Restart from the editor toolbar
+  and status bar. FXServer is downloaded on demand (FiveM or RedM build)
+  and driven as an external process; output streams into a console panel.
+- **`.fxgraph` visual editor** — a React-Flow graph editor that compiles
+  to real Lua on save. The output runs as a normal Cfx resource; there
+  is no runtime interpreter.
+- **Natives reference** — a searchable tree of the FiveM (`gta5`) and
+  RedM (`rdr3`) natives catalogues.
+- **Lua language support** — wires up [sumneko/lua-language-server](https://github.com/LuaLS/lua-language-server)
+  with auto-generated typings for every native of the detected game mode.
+- **Scaffolds** — New Resource templates (Lua / TypeScript / visual) for
+  both FiveM and RedM.
+- **MCP server** — `cfx-mcp/` is a standalone Model Context Protocol
+  server that exposes the running IDE to AI clients (Claude, Codex,
+  Cursor, …): list/restart resources, read FXServer logs, search
+  natives. See [`cfx-mcp/README.md`](cfx-mcp/README.md).
 
-[Visual Studio Code](https://code.visualstudio.com) is a distribution of the `Code - OSS` repository with Microsoft-specific customizations released under a traditional [Microsoft product license](https://code.visualstudio.com/License/).
+## Architecture
 
-[Visual Studio Code](https://code.visualstudio.com) combines the simplicity of a code editor with what developers need for their core edit-build-debug cycle. It provides comprehensive code editing, navigation, and understanding support along with lightweight debugging, a rich extensibility model, and lightweight integration with existing tools.
+Cfx Studio does **not** ship as an extension. All Cfx-specific logic is
+a first-party workbench contribution:
 
-Visual Studio Code is updated monthly with new features and bug fixes. You can download it for Windows, macOS, and Linux on [Visual Studio Code's website](https://code.visualstudio.com/Download). To get the latest releases every day, install the [Insiders build](https://code.visualstudio.com/insiders).
+```
+src/vs/workbench/contrib/cfx/
+├── common/            # game-agnostic types + service interfaces
+├── browser/           # views, editors, status bar, commands, graph webview
+├── electron-sandbox/  # renderer-side service clients
+├── node/              # process spawn, fs ops, MCP bridge server
+└── _shared/           # pure TS libs: visual codegen, natives index,
+                       # server.cfg parser, natives data JSON
+```
 
-## Contributing
+The extension host is retained only for third-party language servers
+Cfx Studio shells out to (e.g. the Lua language server). There is no
+extensions marketplace and no bundled extensions.
 
-There are many ways in which you can participate in this project, for example:
+Cfx-specific build helpers live in `cfx-scripts/`. The standalone MCP
+server lives in `cfx-mcp/`.
 
-* [Submit bugs and feature requests](https://github.com/microsoft/vscode/issues), and help us verify as they are checked in
-* Review [source code changes](https://github.com/microsoft/vscode/pulls)
-* Review the [documentation](https://github.com/microsoft/vscode-docs) and make pull requests for anything from typos to additional and new content
+## Building from source
 
-If you are interested in fixing issues and contributing directly to the code base,
-please see the document [How to Contribute](https://github.com/microsoft/vscode/wiki/How-to-Contribute), which covers the following:
+Prerequisites match upstream VS Code (Node.js, Python, and a C++
+toolchain — see [the VS Code contributor guide](https://github.com/microsoft/vscode/wiki/How-to-Contribute#prerequisites)).
+A portable Node.js toolchain is fetched automatically by the dev script.
 
-* [How to build and run from source](https://github.com/microsoft/vscode/wiki/How-to-Contribute)
-* [The development workflow, including debugging and running tests](https://github.com/microsoft/vscode/wiki/How-to-Contribute#debugging)
-* [Coding guidelines](https://github.com/microsoft/vscode/wiki/Coding-Guidelines)
-* [Submitting pull requests](https://github.com/microsoft/vscode/wiki/How-to-Contribute#pull-requests)
-* [Finding an issue to work on](https://github.com/microsoft/vscode/wiki/How-to-Contribute#where-to-contribute)
-* [Contributing to translations](https://aka.ms/vscodeloc)
+```sh
+npm install
+npm run cfx:dev          # build + launch
+```
 
-## Feedback
+Other dev entry points:
 
-* Ask a question on [Stack Overflow](https://stackoverflow.com/questions/tagged/vscode)
-* [Request a new feature](CONTRIBUTING.md)
-* Upvote [popular feature requests](https://github.com/microsoft/vscode/issues?q=is%3Aopen+is%3Aissue+label%3Afeature-request+sort%3Areactions-%2B1-desc)
-* [File an issue](https://github.com/microsoft/vscode/issues)
-* Connect with the extension author community on [GitHub Discussions](https://github.com/microsoft/vscode-discussions/discussions) or [Slack](https://aka.ms/vscode-dev-community)
-* Follow [@code](https://twitter.com/code) and let us know what you think!
+- `npm run cfx:dev:watch` — incremental rebuilds; reload the window with `Ctrl+R`.
+- `npm run cfx:dev:relaunch` — relaunch without rebuilding.
 
-See our [wiki](https://github.com/microsoft/vscode/wiki/Feedback-Channels) for a description of each of these channels and information on some other available community-driven channels.
+## Relationship to VS Code
 
-## Related Projects
-
-Many of the core components and extensions to VS Code live in their own repositories on GitHub. For example, the [node debug adapter](https://github.com/microsoft/vscode-node-debug) and the [mono debug adapter](https://github.com/microsoft/vscode-mono-debug) repositories are separate from each other. For a complete list, please visit the [Related Projects](https://github.com/microsoft/vscode/wiki/Related-Projects) page on our [wiki](https://github.com/microsoft/vscode/wiki).
-
-## Bundled Extensions
-
-VS Code includes a set of built-in extensions located in the [extensions](extensions) folder, including grammars and snippets for many languages. Extensions that provide rich language support (code completion, Go to Definition) for a language have the suffix `language-features`. For example, the `json` extension provides coloring for `JSON` and the `json-language-features` extension provides rich language support for `JSON`.
-
-## Development Container
-
-This repository includes a Visual Studio Code Dev Containers / GitHub Codespaces development container.
-
-* For [Dev Containers](https://aka.ms/vscode-remote/download/containers), use the **Dev Containers: Clone Repository in Container Volume...** command which creates a Docker volume for better disk I/O on macOS and Windows.
-  * If you already have VS Code and Docker installed, you can also click [here](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/microsoft/vscode) to get started. This will cause VS Code to automatically install the Dev Containers extension if needed, clone the source code into a container volume, and spin up a dev container for use.
-
-* For Codespaces, install the [GitHub Codespaces](https://marketplace.visualstudio.com/items?itemName=GitHub.codespaces) extension in VS Code, and use the **Codespaces: Create New Codespace** command.
-
-Docker / the Codespace should have at least **4 Cores and 6 GB of RAM (8 GB recommended)** to run full build. See the [development container README](.devcontainer/README.md) for more information.
-
-## Code of Conduct
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/). For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+Cfx Studio tracks `microsoft/vscode` as an upstream and merges new
+releases periodically. The unmodified editor, terminal, settings, and
+language tooling are upstream VS Code; the Cfx contribution under
+`src/vs/workbench/contrib/cfx/` and the `cfx-mcp/` / `cfx-scripts/`
+directories are this project's work.
 
 ## License
 
-Copyright (c) Microsoft Corporation. All rights reserved.
+Cfx Studio is licensed under the [MIT License](LICENSE.txt).
 
-Licensed under the [MIT](LICENSE.txt) license.
+It includes Visual Studio Code (`Code - OSS`),
+Copyright (c) Microsoft Corporation, also under the MIT License.
+Third-party component licenses are listed in
+[`ThirdPartyNotices.txt`](ThirdPartyNotices.txt).
+
+Cfx Studio is an independent project and is not affiliated with,
+endorsed by, or sponsored by Microsoft or Cfx.re. FiveM and RedM are
+products of Cfx.re. FXServer is not bundled — it is downloaded on demand
+from the official Cfx.re artifacts host.

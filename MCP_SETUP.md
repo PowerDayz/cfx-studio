@@ -10,10 +10,14 @@ search the FiveM / RedM natives catalogue.
 
 ## 1. One-time setup
 
+Paths below use two placeholders: `<cfx-studio>` is the absolute path to
+your cfx-studio checkout, and `<workspace>` is the FiveM/RedM
+server-data folder you open in the IDE. Substitute your own.
+
 ### 1a. Build the binary
 
 ```sh
-cd D:/txData/FivemRetard/cfx-studio/cfx-mcp
+cd <cfx-studio>/cfx-mcp
 npm install      # only the first time
 npm run build    # produces dist/index.js + copies natives JSON
 ```
@@ -25,8 +29,8 @@ haven't run dev recently or you're prepping a fresh machine.
 Verify:
 
 ```sh
-ls D:/txData/FivemRetard/cfx-studio/cfx-mcp/dist/index.js
-ls D:/txData/FivemRetard/cfx-studio/cfx-mcp/data/natives-fivem.json
+ls <cfx-studio>/cfx-mcp/dist/index.js
+ls <cfx-studio>/cfx-mcp/data/natives-fivem.json
 ```
 
 Both should exist.
@@ -45,13 +49,13 @@ but client-side Lua errors (the F8-console kind) won't reach the IDE.
 ### 1c. Wire `cfx-mcp` into Claude Code
 
 Project-scoped (recommended — config travels with the workspace):
-create `.mcp.json` at `D:/txData/FivemRetard/.mcp.json`:
+create `.mcp.json` at `<workspace>/.mcp.json`:
 
 ```json
 {
 	"mcpServers": {
 		"cfx-studio": {
-			"command": "D:\\txData\\FivemRetard\\cfx-studio\\cfx-mcp\\bin\\cfx-mcp.cmd"
+			"command": "<cfx-studio>/cfx-mcp/bin/cfx-mcp.cmd"
 		}
 	}
 }
@@ -66,11 +70,11 @@ For other clients see `cfx-mcp/README.md` — same JSON shape.
 
 ## 2. Daily flow
 
-1. Start Cfx Studio: from `D:/txData/FivemRetard/cfx-studio/` run
+1. Start Cfx Studio: from `<cfx-studio>/` run
    `npm run cfx:dev:relaunch` (or `cfx:dev` for a full rebuild).
    Make sure it's running while you want the AI to use the live tools.
 2. Start FXServer from inside the IDE (the title-bar Start button).
-3. Open Claude Code in `D:/txData/FivemRetard/`.
+3. Open Claude Code in `<workspace>/`.
 4. In the chat, run `/mcp` — `cfx-studio` should appear with seven
    tools.
 
