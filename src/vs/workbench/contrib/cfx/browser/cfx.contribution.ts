@@ -49,6 +49,18 @@ import './tools/cfxToolFacade.js';
 import { registerCfxMcpBridge } from './mcpBridge/cfxMcpBridgeContribution.js';
 registerCfxMcpBridge();
 
+// Built-in Cfx Agent (slice 1: read-only diagnose mode). The order is
+// important: each side-effect import registers its singleton; consumers
+// further down inject services from above.
+import './agent/secretRegistry.js';
+import './agent/anthropicProvider.js';
+import './agent/agentToolRunner.js';
+import './agent/agentService.js';
+import './agent/agentViewContainer.js';
+
+import { registerAgentCommands } from './agent/agentCommands.js';
+registerAgentCommands();
+
 import { registerAutoRestartContribution } from './server/autoRestart.js';
 registerAutoRestartContribution();
 

@@ -94,6 +94,9 @@ if (!NO_REBUILD) {
 	step('build fxgraph webview (Vite)');
 	run('node cfx-scripts/build-fxgraph-webview.mjs', { cwd: FORK });
 
+	step('build agent webview (Vite)');
+	run('node cfx-scripts/build-agent-webview.mjs', { cwd: FORK });
+
 	step('build cfx-mcp standalone binary');
 	const mcpRoot = join(FORK, 'cfx-mcp');
 	if (existsSync(mcpRoot)) {
