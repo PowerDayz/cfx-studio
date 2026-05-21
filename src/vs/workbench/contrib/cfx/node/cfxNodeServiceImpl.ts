@@ -99,17 +99,38 @@ export class CfxNodeService extends Disposable implements ICfxNodeService {
 	async spawnGameClient(args: IGameClientSpawnArgs): Promise<string> {
 		const spawnId = generateUuid();
 
-		// `detached: true` + `stdio: 'ignore'` + `proc.unref()`: the game
-		// becomes a fully independent process. We still receive an 'exit'
-		// event when it terminates (Node keeps the handle around), but the
-		// game survives an IDE crash and the IDE can quit without orphaned
-		// pipes blocking shutdown. `windowsHide: true` only suppresses our
-		// own (hidden) console window; the game's own window is unaffected.
+		// FiveM's legitimacy component rejects launches whose immediate
+		// parent process isn't a shell or web browser. A plain
+		// `child_process.spawn(FiveM.exe, ...)` sets Node as the parent
+		// and fails with "This application should be launched directly
+		// from the shell or a web browser." (followed by DumpServer
+		// captures and ros:launcher refusal). Wrapping via
+		// `cmd.exe /c <exe> +connect …` makes cmd.exe the parent, which
+		// IS on the whitelist.
 		//
-		// Sync errors propagate back to the renderer via Promise rejection
-		// (matches the FXServer spawn convention). Async errors come through
-		// onGameClientExit with errorMessage populated.
-		const proc: ChildProcess = spawn(args.exePath, [...args.args], {
+		// `cmd /c` (without `start`) holds the cmd process alive for the
+		// duration of the spawned GUI app — verified via spawn probe:
+		// `cmd /c notepad.exe` exits exactly when notepad does. So the
+		// cmd PID we track here is a faithful proxy for the game-client
+		// lifecycle; we still get an `exit` event the moment the game
+		// window closes (clean exit, crash, or taskkill). No
+		// process-tree walk required.
+		//
+		// Array-form args (rather than shell:true) so Node handles
+		// Windows command-line escaping when exePath contains spaces.
+		//
+		// `detached: true` + `stdio: 'ignore'` + `proc.unref()`: the
+		// cmd wrapper and its FiveM/RedM child run independently. The
+		// game survives an IDE crash, and the IDE can quit without
+		// orphaned pipes blocking shutdown. `windowsHide: true`
+		// suppresses cmd's own (otherwise transient) console window;
+		// the game's own window is unaffected.
+		//
+		// Sync errors propagate back to the renderer via Promise
+		// rejection (matches the FXServer spawn convention). Async
+		// errors come through onGameClientExit with errorMessage
+		// populated.
+		const proc: ChildProcess = spawn('cmd.exe', ['/c', args.exePath, ...args.args], {
 			detached: true,
 			stdio: 'ignore',
 			windowsHide: true,
