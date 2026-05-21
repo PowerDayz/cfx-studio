@@ -35,6 +35,7 @@ import { isAssignable, type EditorType } from '../../../../_shared/visual/types.
 import { vscode } from './messages';
 import { NODE_TYPES } from './nodes.js';
 import { QuickAddMenu } from './QuickAddMenu.js';
+import { RadialMenu } from './RadialMenu/RadialMenu.js';
 import './styles.css';
 
 interface FlowNodeData extends Record<string, unknown> {
@@ -92,6 +93,12 @@ const HISTORY_LIMIT = 50;
 function EditorInner() {
 	const [doc, setDoc] = useState<GraphDoc>(() => emptyGraphDoc());
 	const [quickAdd, setQuickAdd] = useState<QuickAddState | null>(null);
+	// Radial menu is an additive sibling of QuickAddMenu — same data
+	// sources, different presentation. Bound to Ctrl/Cmd+Space so it
+	// doesn't displace the existing Space → QuickAddMenu flow. Shape
+	// mirrors QuickAddState so we can reuse openQuickAddAt for the
+	// type-ahead escape hatch.
+	const [radial, setRadial] = useState<{ screen: { x: number; y: number }; flow: { x: number; y: number }; seed?: QuickAddState['seed'] } | null>(null);
 	const [showHelp, setShowHelp] = useState(false);
 	const [promoteMenu, setPromoteMenu] = useState<{ x: number; y: number; nodeId: string; pinId: string; type: EditorType } | null>(null);
 	const [boxSelect, setBoxSelect] = useState<{ x0: number; y0: number; x: number; y: number } | null>(null);
@@ -127,6 +134,22 @@ function EditorInner() {
 	// thresholds overshoot typical click jitter (≤10 px, ≤80 ms) so a
 	// regular right-click never accidentally enters selection mode.
 	const rightDragRef = useRef<{ startX: number; startY: number; downTime: number; dragging: boolean } | null>(null);
+	// Last-known mouse position anywhere in the webview, in viewport
+	// space. Used by Ctrl+Space (which has no pointer event of its own)
+	// to open the radial menu where the user was last looking, not at
+	// viewport centre. Tracked at the window level — if we only watched
+	// the canvas, opening Ctrl+Space while the cursor was over the
+	// toolbar or sidebar would land the menu far from the actual cursor.
+	const lastMouseScreenRef = useRef<{ x: number; y: number }>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+	useEffect(() => {
+		const onMove = (e: MouseEvent) => { lastMouseScreenRef.current = { x: e.clientX, y: e.clientY }; };
+		window.addEventListener('mousemove', onMove, { passive: true });
+		return () => window.removeEventListener('mousemove', onMove);
+	}, []);
+	// Element that held DOM focus the instant the radial opened, so we
+	// can restore it when the radial closes (otherwise keyboard focus
+	// is lost on every Ctrl+Space → pick cycle). Reset on close.
+	const radialOpenerFocusRef = useRef<Element | null>(null);
 
 	// Mutate the doc and notify the host. Each mutation also records the
 	// pre-mutation state on the history stack so Ctrl+Z can revert.
@@ -369,6 +392,31 @@ function EditorInner() {
 		setQuickAdd({ screen: { x: screenX, y: screenY }, flow: flowPos, seed });
 	}, []);
 
+	const openRadialAt = useCallback((screenX: number, screenY: number, seed?: QuickAddState['seed']) => {
+		const flow = flowRef.current;
+		if (!flow) return;
+		const flowPos = flow.screenToFlowPosition({ x: screenX, y: screenY });
+		radialOpenerFocusRef.current = document.activeElement;
+		setRadial({ screen: { x: screenX, y: screenY }, flow: flowPos, seed });
+	}, []);
+	// Centralised close — restores keyboard focus to whatever held it
+	// when the radial opened (toolbar button, canvas, …). Used by every
+	// site that nulls out the radial state.
+	const closeRadial = useCallback(() => {
+		setRadial(null);
+		const prev = radialOpenerFocusRef.current;
+		radialOpenerFocusRef.current = null;
+		if (prev instanceof HTMLElement) { prev.focus(); }
+	}, []);
+	// Fresh flow position from the radial's screen anchor — re-projects
+	// through the current React Flow viewport so pan/zoom that happened
+	// while the menu was open doesn't insert the node at a stale coord.
+	const flowPosForRadial = useCallback((screen: { x: number; y: number }) => {
+		const flow = flowRef.current;
+		if (!flow) { return screen; }
+		return flow.screenToFlowPosition(screen);
+	}, []);
+
 	const onNodeDragStart: React.ComponentProps<typeof ReactFlow>['onNodeDragStart'] = useCallback((_e, node) => {
 		const data = node.data as FlowNodeData | undefined;
 		if (!data || data.bnode.kind !== 'comment') return;
@@ -608,8 +656,23 @@ function EditorInner() {
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (isInputFocused()) return;
+			// While the radial is open it owns input — its capture-phase
+			// keydown handles Esc / Backspace / arrows / Enter / Tab and
+			// stops propagation. Editor-wide shortcuts (Ctrl+D duplicate,
+			// Ctrl+Z undo, Shift+? help, …) must not fire underneath it.
+			if (radial) return;
 			const meta = e.ctrlKey || e.metaKey;
-			if (e.key === ' ') {
+			if (meta && e.key === ' ') {
+				// Ctrl/Cmd+Space opens the radial menu (browse-by-category UX).
+				// Plain Space keeps opening the existing QuickAddMenu (search UX),
+				// so both paths stay available and prior muscle memory is intact.
+				// Anchor at the last known mouse position over the webview so
+				// the radial appears under the user's attention, not at the
+				// viewport centre.
+				e.preventDefault();
+				const { x, y } = lastMouseScreenRef.current;
+				openRadialAt(x, y);
+			} else if (e.key === ' ') {
 				e.preventDefault();
 				openQuickAddAt(window.innerWidth / 2, window.innerHeight / 2);
 			} else if (e.key === 'Escape') {
@@ -641,7 +704,7 @@ function EditorInner() {
 		};
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
-	}, [openQuickAddAt, duplicateSelection, undo, redo]);
+	}, [openQuickAddAt, openRadialAt, radial, duplicateSelection, undo, redo]);
 
 	// Pin-drag → empty canvas opens the QuickAddMenu pre-filtered to
 	// nodes that have a compatible pin on the OPPOSITE side, and wires
@@ -799,6 +862,15 @@ function EditorInner() {
 					onClick={() => setVarModal({ mode: 'declare', defaultName: 'myVar', defaultType: 'integer' })}
 					title="Declare a script-scope variable; appears as get/set entries in the node palette"
 				>+ Variable</button>
+				<button
+					onClick={() => {
+						const flow = flowRef.current;
+						if (!flow) return;
+						const flowPos = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+						setCommandModal({ flowPos });
+					}}
+					title="Register a /command — opens the command-name + params dialog (also Shift+C)"
+				>+ Command</button>
 				<button onClick={autoArrange} title="Lay out nodes left-to-right by exec flow">Auto-arrange</button>
 				<button onClick={() => openQuickAddAt(window.innerWidth / 2, window.innerHeight / 2)}>+ Add Node (Space)</button>
 			</div>
@@ -847,6 +919,27 @@ function EditorInner() {
 						onAddCommand={(fp) => setCommandModal({ flowPos: fp })}
 						onPick={insertNode}
 						onCancel={() => setQuickAdd(null)}
+					/>
+				)}
+				{radial && (
+					<RadialMenu
+						screenPos={radial.screen}
+						flowPos={radial.flow}
+						scope={doc.scope}
+						seed={radial.seed}
+						variables={doc.variables}
+						customEvents={customEventsForDoc(doc)}
+						onAddCustomEvent={(fp) => { closeRadial(); setEventModal({ flowPos: fp }); }}
+						onPick={(node) => {
+							// Re-project the radial's screen anchor through
+							// the current React Flow viewport so panning or
+							// zooming the canvas while the radial was open
+							// doesn't drop the node at a stale flow coord.
+							const freshPos = flowPosForRadial(radial.screen);
+							closeRadial();
+							insertNode({ ...node, pos: freshPos } as typeof node);
+						}}
+						onCancel={closeRadial}
 					/>
 				)}
 				{boxSelect && (

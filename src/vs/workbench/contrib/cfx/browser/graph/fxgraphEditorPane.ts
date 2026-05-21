@@ -225,7 +225,7 @@ export class FxGraphEditorPane extends EditorPane {
 				}, 300);
 				break;
 			case 'request-native-search':
-				this.handleNativeSearch(msg.query);
+				this.handleNativeSearch(msg.query, msg.namespaces, msg.requestId);
 				break;
 			case 'host-error':
 				this.logService.error(`[cfx] fxgraph webview error: ${msg.message}`);
@@ -261,16 +261,34 @@ export class FxGraphEditorPane extends EditorPane {
 		}
 	}
 
-	private handleNativeSearch(query: string): void {
+	private handleNativeSearch(query: string, namespaces?: ReadonlyArray<string>, requestId?: number): void {
 		if (!this.nativesService.isLoaded) { return; }
-		const results = this.nativesService.search(query, 200, this.currentScope).map((n) => ({
+		// Three modes:
+		//   query alone           → ranked search across everything
+		//                            (legacy QuickAddMenu path)
+		//   namespaces alone      → return every native in those namespaces,
+		//                            sorted by ns then name
+		//                            (radial menu's "browse a bucket" path)
+		//   both                  → ranked search restricted to those namespaces
+		let picked;
+		const nsSet = namespaces && namespaces.length > 0 ? new Set(namespaces) : undefined;
+		if (nsSet && !query) {
+			picked = this.nativesService.getAll()
+				.filter((n) => nsSet.has(n.ns))
+				.sort((a, b) => a.ns.localeCompare(b.ns) || a.name.localeCompare(b.name))
+				.slice(0, 1000);
+		} else {
+			const ranked = this.nativesService.search(query, 1000, this.currentScope);
+			picked = nsSet ? ranked.filter((n) => nsSet.has(n.ns)).slice(0, 200) : ranked.slice(0, 200);
+		}
+		const results = picked.map((n) => ({
 			hash: n.hash,
 			ns: n.ns,
 			name: n.name,
 			params: n.params.map((p) => ({ name: p.name, type: p.type })),
 			results: n.results,
 		}));
-		this.webviewMD.value?.postMessage({ type: 'native-search-result', query, results });
+		this.webviewMD.value?.postMessage({ type: 'native-search-result', query, requestId, results });
 	}
 }
 
