@@ -101,7 +101,7 @@ export class GlobalCompositeBar extends Disposable {
 		}));
 
 		if (this.accountsVisibilityPreference) {
-			/* FIVEM-STUDIO: account/profile icon removed */
+			/* CFX STUDIO: account/profile icon removed */
 		}
 
 		this.globalActivityActionBar.push(this.globalActivityAction);
@@ -140,7 +140,7 @@ export class GlobalCompositeBar extends Disposable {
 		if (this.globalActivityActionBar.length() === 2) {
 			this.globalActivityActionBar.pull(GlobalCompositeBar.ACCOUNTS_ACTION_INDEX);
 		} else {
-			/* FIVEM-STUDIO: account/profile icon removed */
+			/* CFX STUDIO: account/profile icon removed */
 		}
 	}
 
