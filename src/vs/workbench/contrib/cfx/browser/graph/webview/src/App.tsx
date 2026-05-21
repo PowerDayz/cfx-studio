@@ -38,6 +38,7 @@ import { NODE_TYPES } from './nodes.js';
 import { RadialMenu } from './RadialMenu/RadialMenu.js';
 import type { SeedInfo } from './RadialMenu/itemBuilders.js';
 import { DiagnosticsBanner } from './DiagnosticsBanner.js';
+import { LuaPreview } from './LuaPreview.js';
 import './styles.css';
 
 interface FlowNodeData extends Record<string, unknown> {
@@ -187,13 +188,15 @@ function EditorInner() {
 	}, [updateDoc]);
 
 	// Race-guard: the most recent `init` version observed. `diagnostics`
-	// messages with an older docVersion are dropped (they belong to a
-	// previously-loaded document still in flight from the host).
+	// and `lua-preview` messages with an older docVersion are dropped —
+	// they belong to a previously-loaded document still in flight.
 	const docVersionRef = useRef<number>(0);
 	const [diagnostics, setDiagnostics] = useState<readonly GraphDiagnostic[]>([]);
+	const [luaPreview, setLuaPreview] = useState<string>('');
+	const [luaPreviewVisible, setLuaPreviewVisible] = useState<boolean>(false);
 	useEffect(() => {
 		const handler = (e: MessageEvent) => {
-			const msg = e.data as { type: string; doc?: GraphDoc; docVersion?: number; diagnostics?: readonly GraphDiagnostic[] };
+			const msg = e.data as { type: string; doc?: GraphDoc; docVersion?: number; diagnostics?: readonly GraphDiagnostic[]; source?: string };
 			if (msg && msg.type === 'init' && msg.doc) {
 				// Loading a different doc resets history — undo/redo
 				// across document boundaries would be confusing.
@@ -201,6 +204,7 @@ function EditorInner() {
 				futureRef.current = [];
 				docVersionRef.current = msg.docVersion ?? 0;
 				setDiagnostics([]);
+				setLuaPreview('');
 				setDoc(msg.doc as GraphDoc);
 				return;
 			}
@@ -211,6 +215,12 @@ function EditorInner() {
 					return;
 				}
 				setDiagnostics(msg.diagnostics ?? []);
+				return;
+			}
+			if (msg && msg.type === 'lua-preview') {
+				const v = msg.docVersion ?? 0;
+				if (v < docVersionRef.current) { return; }
+				setLuaPreview(msg.source ?? '');
 				return;
 			}
 		};
@@ -896,6 +906,13 @@ function EditorInner() {
 					title="Register a /command — opens the command-name + params dialog (also Shift+C)"
 				>+ Command</button>
 				<button onClick={autoArrange} title="Lay out nodes left-to-right by exec flow">Auto-arrange</button>
+				<button
+					onClick={() => setLuaPreviewVisible((v) => !v)}
+					title="Toggle the read-only Lua preview overlay"
+					style={luaPreviewVisible ? { background: 'var(--vscode-button-background, #0e639c)', color: 'var(--vscode-button-foreground, #fff)' } : undefined}
+				>
+					Lua preview
+				</button>
 				<button onClick={() => openRadialAt(window.innerWidth / 2, window.innerHeight / 2)}>+ Add Node (Space)</button>
 			</div>
 			<div
@@ -906,6 +923,7 @@ function EditorInner() {
 				onContextMenu={onCanvasContextMenu}
 			>
 				<DiagnosticsBanner diagnostics={diagnostics} onSelectNode={focusNodeFromDiagnostic} />
+				<LuaPreview source={luaPreview} visible={luaPreviewVisible} onClose={() => setLuaPreviewVisible(false)} />
 				<ReactFlow
 					nodes={nodes}
 					edges={edges}

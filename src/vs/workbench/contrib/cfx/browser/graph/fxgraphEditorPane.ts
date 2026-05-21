@@ -315,6 +315,13 @@ export class FxGraphEditorPane extends EditorPane {
 				docVersion,
 				diagnostics: result.diagnostics,
 			});
+			// Mirror the generated Lua to the webview so the in-graph
+			// preview overlay can show what the user just authored.
+			this.webviewMD.value?.postMessage({
+				type: 'lua-preview',
+				docVersion,
+				source: result.source,
+			});
 			const errorCount = result.diagnostics.filter((d) => d.severity === 'error').length;
 			if (errorCount > 0) {
 				this.logService.warn(`[cfx] fxgraph autosave: ${errorCount} codegen error(s)`);

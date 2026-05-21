@@ -44,7 +44,13 @@ export type HostToWebviewMessage =
 	 * whose `docVersion` is less than the most recently seen `init` to
 	 * avoid stale results painting a freshly-switched-to doc.
 	 */
-	| { type: 'diagnostics'; docVersion: number; diagnostics: ReadonlyArray<GraphDiagnostic> };
+	| { type: 'diagnostics'; docVersion: number; diagnostics: ReadonlyArray<GraphDiagnostic> }
+	/**
+	 * Generated Lua source for the currently-loaded document. Posted
+	 * after every successful codegen so the in-graph preview overlay
+	 * stays in sync. Same `docVersion` race-guard as `diagnostics`.
+	 */
+	| { type: 'lua-preview'; docVersion: number; source: string };
 
 /** Sent webview → host. */
 export type WebviewToHostMessage =
