@@ -39,11 +39,11 @@ const MEDIA_DIR_REL = 'vs/workbench/contrib/cfx/browser/graph/media/fxgraph';
  * `media/fxgraph/`. On `setInput`, the file is read, parsed as JSON,
  * and posted to the webview as the `init` message together with the
  * resource's resolved game mode. Subsequent `change` messages from the
- * webview update the in-memory doc; the EditorInput's dirty flag is
- * intentionally left unset for now — saves go through the existing
- * `cfx.fxgraph.compile` action which writes both the .fxgraph and the
- * sibling .lua. Implementing a `model.save()` round-trip is a separate
- * follow-up.
+ * webview update the in-memory doc; the pane keeps a 300ms debounce on
+ * those changes before writing the canonical `.fxgraph` JSON and
+ * regenerating the sibling `.lua`. The input's dirty flag is set on
+ * change and cleared on a successful write so the tab title reflects
+ * unsaved state and Ctrl+S can force-flush the debounce synchronously.
  */
 export class FxGraphEditorPane extends EditorPane {
 
@@ -55,6 +55,7 @@ export class FxGraphEditorPane extends EditorPane {
 	private webviewReady = false;
 	private pendingInit: HostToWebviewMessage | undefined;
 	private currentResource: import('../../../../../base/common/uri.js').URI | undefined;
+	private currentInput: FxGraphEditorInput | undefined;
 	private currentScope: 'client' | 'server' | 'shared' = 'client';
 	private saveTimer: ReturnType<typeof setTimeout> | undefined;
 	private pendingSaveDoc: unknown;
@@ -90,6 +91,8 @@ export class FxGraphEditorPane extends EditorPane {
 		}
 
 		this.currentResource = input.resource;
+		this.currentInput = input;
+		input.setSaveHandler(() => this.forceFlushSave());
 
 		try {
 			this.ensureWebview();
@@ -130,21 +133,61 @@ export class FxGraphEditorPane extends EditorPane {
 	}
 
 	override clearInput(): void {
-		// Flush any pending save before tearing the webview down so the
-		// user doesn't lose the last edit when they switch tabs.
-		if (this.saveTimer) {
-			clearTimeout(this.saveTimer);
-			this.saveTimer = undefined;
-			void this.flushSave();
-		}
+		this.teardownPendingSave();
+		this.currentInput?.setSaveHandler(undefined);
+		this.currentInput = undefined;
 		this.pendingInit = undefined;
-		this.pendingSaveDoc = undefined;
 		this.currentResource = undefined;
 		this.webviewReady = false;
 		this.webviewMD.value?.release(this);
 		this.webviewMD.clear();
 		this.webviewListeners.clear();
 		super.clearInput();
+	}
+
+	override dispose(): void {
+		// Mirror `clearInput`'s flush so pane teardown paths that skip
+		// `clearInput` (split-close, drag-to-new-group) don't drop the
+		// last edit. Safe to call after `clearInput` already ran: the
+		// timer has been cleared and `pendingSaveDoc` is undefined, so
+		// `flushSave` short-circuits.
+		this.teardownPendingSave();
+		this.currentInput?.setSaveHandler(undefined);
+		this.currentInput = undefined;
+		super.dispose();
+	}
+
+	/**
+	 * Cancel any scheduled autosave and flush pending edits now. Called
+	 * from both `clearInput` and `dispose` so the two teardown paths
+	 * share one implementation.
+	 */
+	private teardownPendingSave(): void {
+		if (this.saveTimer) {
+			clearTimeout(this.saveTimer);
+			this.saveTimer = undefined;
+		}
+		if (this.pendingSaveDoc !== undefined) {
+			void this.flushSave();
+		}
+	}
+
+	/**
+	 * Force-flush the debounced autosave. Invoked via the
+	 * input.save() override so Ctrl+S writes immediately. Returns
+	 * whether the write succeeded; the input uses this to decide
+	 * whether to clear its dirty flag.
+	 */
+	private async forceFlushSave(): Promise<boolean> {
+		if (this.saveTimer) {
+			clearTimeout(this.saveTimer);
+			this.saveTimer = undefined;
+		}
+		if (this.pendingSaveDoc === undefined) {
+			// Nothing pending — already in sync with disk.
+			return true;
+		}
+		return await this.flushSave();
 	}
 
 	override layout(dimension: Dimension): void {
@@ -218,6 +261,7 @@ export class FxGraphEditorPane extends EditorPane {
 				// Debounced so a sequence of rapid edits (drag, multi-pin
 				// connect) collapses into one filesystem write.
 				this.pendingSaveDoc = msg.doc;
+				this.currentInput?.setDirty(true);
 				if (this.saveTimer) { clearTimeout(this.saveTimer); }
 				this.saveTimer = setTimeout(() => {
 					this.saveTimer = undefined;
@@ -236,11 +280,12 @@ export class FxGraphEditorPane extends EditorPane {
 		}
 	}
 
-	private async flushSave(): Promise<void> {
+	private async flushSave(): Promise<boolean> {
 		const uri = this.currentResource;
 		const doc = this.pendingSaveDoc;
+		const input = this.currentInput;
 		this.pendingSaveDoc = undefined;
-		if (!uri || doc === undefined) { return; }
+		if (!uri || doc === undefined) { return true; }
 		try {
 			// Persist the canonical .fxgraph JSON.
 			const json = JSON.stringify(doc, null, 2) + '\n';
@@ -256,8 +301,16 @@ export class FxGraphEditorPane extends EditorPane {
 			if (result.errors.length > 0) {
 				this.logService.warn(`[cfx] fxgraph autosave: ${result.errors.length} codegen warning(s)`);
 			}
+			// .fxgraph wrote successfully — the canonical source is on
+			// disk, so the tab is clean. (.lua sibling is a generated
+			// artifact; its codegen-error state is surfaced separately
+			// to the webview in Slice B.)
+			input?.setDirty(false);
+			return true;
 		} catch (err) {
 			this.logService.error(`[cfx] failed to autosave ${uri.toString()}`, err);
+			// Leave dirty=true so the user knows the write didn't land.
+			return false;
 		}
 	}
 
