@@ -4,9 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { Emitter, Event } from '../../../../../base/common/event.js';
-import { Disposable, toDisposable } from '../../../../../base/common/lifecycle.js';
-import { generateUuid } from '../../../../../base/common/uuid.js';
+import { Emitter } from '../../../../../base/common/event.js';
+import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { ISecretStorageService } from '../../../../../platform/secrets/common/secrets.js';
 import { InstantiationType, registerSingleton } from '../../../../../platform/instantiation/common/extensions.js';
@@ -303,8 +302,3 @@ function toAnthropicTool(tool: ProviderTool): object {
 }
 
 registerSingleton(IAgentProvider, AnthropicProvider, InstantiationType.Delayed);
-
-// Silence unused-import warnings for symbols referenced only via types.
-void generateUuid;
-void Event;
-void toDisposable;

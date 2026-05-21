@@ -118,15 +118,6 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 				'When enabled (default), Cfx Studio opens a local IPC pipe that the cfx-mcp standalone binary connects to so MCP-compatible AI clients (Claude Desktop, Claude Code, Codex, Cursor, ...) can list resources, restart them, read logs, and search natives. Disable to close the pipe.',
 			),
 		},
-		'cfx.agent.enabled': {
-			type: 'boolean',
-			default: true,
-			scope: ConfigurationScope.APPLICATION,
-			description: localize(
-				'cfx.agent.enabled.description',
-				'When enabled (default), the built-in Cfx Agent panel is registered in the activity bar. The panel is a first-party AI assistant that reads your live FXServer state (resources, logs, errors, natives) and answers questions. Requires an Anthropic API key set via the "Cfx: Set Agent API Key" command. Disable to hide the panel entirely.',
-			),
-		},
 		'cfx.agent.model': {
 			type: 'string',
 			default: 'claude-sonnet-4-6',
