@@ -31,11 +31,13 @@ import type {
 import { emptyGraphDoc, nextEdgeId } from '../../../../_shared/visual/doc.js';
 import { nodeVarSet, nodeVarGet, nodeCustomEvent, nodeCommand, nodeTriggerEvent } from '../../../../_shared/visual/sig-to-node.js';
 import { isAssignable, type EditorType } from '../../../../_shared/visual/types.js';
+import type { GraphDiagnostic } from '../../../../_shared/visual/diagnostics.js';
 
 import { vscode } from './messages';
 import { NODE_TYPES } from './nodes.js';
 import { RadialMenu } from './RadialMenu/RadialMenu.js';
 import type { SeedInfo } from './RadialMenu/itemBuilders.js';
+import { DiagnosticsBanner } from './DiagnosticsBanner.js';
 import './styles.css';
 
 interface FlowNodeData extends Record<string, unknown> {
@@ -184,15 +186,32 @@ function EditorInner() {
 		updateDoc((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === next.id ? next : n)) }));
 	}, [updateDoc]);
 
+	// Race-guard: the most recent `init` version observed. `diagnostics`
+	// messages with an older docVersion are dropped (they belong to a
+	// previously-loaded document still in flight from the host).
+	const docVersionRef = useRef<number>(0);
+	const [diagnostics, setDiagnostics] = useState<readonly GraphDiagnostic[]>([]);
 	useEffect(() => {
 		const handler = (e: MessageEvent) => {
-			const msg = e.data as { type: string; doc?: GraphDoc };
+			const msg = e.data as { type: string; doc?: GraphDoc; docVersion?: number; diagnostics?: readonly GraphDiagnostic[] };
 			if (msg && msg.type === 'init' && msg.doc) {
 				// Loading a different doc resets history — undo/redo
 				// across document boundaries would be confusing.
 				pastRef.current = [];
 				futureRef.current = [];
+				docVersionRef.current = msg.docVersion ?? 0;
+				setDiagnostics([]);
 				setDoc(msg.doc as GraphDoc);
+				return;
+			}
+			if (msg && msg.type === 'diagnostics') {
+				const v = msg.docVersion ?? 0;
+				if (v < docVersionRef.current) {
+					// Stale result for a previous document — ignore.
+					return;
+				}
+				setDiagnostics(msg.diagnostics ?? []);
+				return;
 			}
 		};
 		window.addEventListener('message', handler);
@@ -200,6 +219,22 @@ function EditorInner() {
 		// holds a `pendingInit` buffer that drains on this signal.
 		vscode?.postMessage({ type: 'ready' });
 		return () => window.removeEventListener('message', handler);
+	}, []);
+
+	// Derived set of node ids that have at least one error-severity
+	// diagnostic. Used by the node renderer to add a red ring.
+	const errorNodeIds = useMemo(() => {
+		const s = new Set<string>();
+		for (const d of diagnostics) {
+			if (d.severity === 'error' && d.nodeId) { s.add(d.nodeId); }
+		}
+		return s;
+	}, [diagnostics]);
+
+	const focusNodeFromDiagnostic = useCallback((nodeId: string) => {
+		const flow = flowRef.current;
+		if (!flow) { return; }
+		flow.fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.3 });
 	}, []);
 
 	const [nodes, setNodes, onNodesChangeRaw] = useNodesState<RFNode<FlowNodeData>>([]);
@@ -248,7 +283,7 @@ function EditorInner() {
 					id: bn.id,
 					type: 'blueprint',
 					position: prior?.dragging && prior.position ? prior.position : persistedPos,
-					data: { bnode: bn, onPatch: patchNode, missingPins },
+					data: { bnode: bn, onPatch: patchNode, missingPins, hasError: errorNodeIds.has(bn.id) },
 					deletable: bn.kind !== 'event' || doc.nodes.filter((n) => n.kind === 'event').length > 1,
 					// Comments behave as a background label: the inner body
 					// is click-through (`pointer-events: none`), and the
@@ -261,7 +296,7 @@ function EditorInner() {
 				};
 			}),
 		);
-	}, [doc, patchNode, missingPins, setNodes]);
+	}, [doc, patchNode, missingPins, errorNodeIds, setNodes]);
 
 	// Exec edges render as animated dashed white "thread of execution"
 	// lines (the deprecated editor's signature look). Value edges use a
@@ -870,6 +905,7 @@ function EditorInner() {
 				onMouseUp={onCanvasMouseUp}
 				onContextMenu={onCanvasContextMenu}
 			>
+				<DiagnosticsBanner diagnostics={diagnostics} onSelectNode={focusNodeFromDiagnostic} />
 				<ReactFlow
 					nodes={nodes}
 					edges={edges}

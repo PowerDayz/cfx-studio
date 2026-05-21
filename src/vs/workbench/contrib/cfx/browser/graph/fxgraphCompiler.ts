@@ -17,18 +17,13 @@ import type { GraphDoc } from '../../_shared/visual/doc.js';
 
 /**
  * Compile a .fxgraph file to its sibling .lua. Walks up to find the
- * resource folder (the directory containing fxmanifest.lua), so the
- * compiler can later (when the per-resource function table integrates)
- * collect cross-graph custom functions in the same resource.
- *
- * For 0029's scope, function table integration is wired via a separate
- * resourceFunctionTable.ts; this compiler currently writes only the
- * per-graph .lua. The per-resource _cfx_functions.lua emission is a
- * one-line addition once the function table is populated.
+ * resource folder (the directory containing fxmanifest.lua) so callers
+ * can resolve resource-scoped state (e.g. for the natives index).
  *
  * Invoked via `cfx.fxgraph.compile` from the command palette while a
- * .fxgraph editor is active. Auto-compile-on-save lands once the
- * custom EditorPane registration is complete.
+ * .fxgraph editor is active. The custom EditorPane writes both files
+ * automatically on edit; this command is the explicit one-shot path
+ * (e.g. compiling a graph the user has on disk but isn't viewing).
  */
 class CompileFxGraphAction extends Action2 {
 	static readonly ID = 'cfx.fxgraph.compile';
@@ -56,11 +51,12 @@ class CompileFxGraphAction extends Action2 {
 			const content = await fileService.readFile(uri);
 			const doc = JSON.parse(content.value.toString()) as GraphDoc;
 			const result = generateLua(doc, { source: uri.path.split('/').pop() ?? '<fxgraph>' });
-			if (result.errors.length > 0) {
+			const errorCount = result.diagnostics.filter((d) => d.severity === 'error').length;
+			if (errorCount > 0) {
 				notification.warn(localize(
 					'cfx.fxgraph.compileWarn',
-					'Cfx: compiled with {0} warning(s); see notifications.',
-					result.errors.length,
+					'Cfx: compiled with {0} error(s); open the graph to see details.',
+					errorCount,
 				));
 			}
 
@@ -75,7 +71,8 @@ class CompileFxGraphAction extends Action2 {
 
 /**
  * Walk up from a file URI looking for an fxmanifest.lua sibling. Used
- * by the resource function table to scope its watched .fxgraph set.
+ * by the status-bar and tab-decoration code to scope a file to its
+ * owning Cfx resource folder.
  */
 export async function findResourceFolder(fileService: IFileService, fileUri: URI): Promise<URI | undefined> {
 	let current = dirname(fileUri);

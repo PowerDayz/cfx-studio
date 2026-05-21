@@ -59,6 +59,12 @@ export class FxGraphEditorPane extends EditorPane {
 	private currentScope: 'client' | 'server' | 'shared' = 'client';
 	private saveTimer: ReturnType<typeof setTimeout> | undefined;
 	private pendingSaveDoc: unknown;
+	/**
+	 * Monotonic per-pane document version. Bumped on every `setInput` so
+	 * the webview can ignore in-flight `diagnostics` and `lua-preview`
+	 * messages that belong to a previous document.
+	 */
+	private docVersion = 0;
 
 	constructor(
 		group: IEditorGroup,
@@ -92,6 +98,7 @@ export class FxGraphEditorPane extends EditorPane {
 
 		this.currentResource = input.resource;
 		this.currentInput = input;
+		this.docVersion++;
 		input.setSaveHandler(() => this.forceFlushSave());
 
 		try {
@@ -124,7 +131,7 @@ export class FxGraphEditorPane extends EditorPane {
 		const mode = await this.gameModeService.getResourceMode(folder);
 		if (token.isCancellationRequested) { return; }
 
-		const init: HostToWebviewMessage = { type: 'init', doc, gameMode: mode };
+		const init: HostToWebviewMessage = { type: 'init', docVersion: this.docVersion, doc, gameMode: mode };
 		if (this.webviewReady) {
 			this.webviewMD.value?.postMessage(init);
 		} else {
@@ -284,6 +291,7 @@ export class FxGraphEditorPane extends EditorPane {
 		const uri = this.currentResource;
 		const doc = this.pendingSaveDoc;
 		const input = this.currentInput;
+		const docVersion = this.docVersion;
 		this.pendingSaveDoc = undefined;
 		if (!uri || doc === undefined) { return true; }
 		try {
@@ -298,13 +306,24 @@ export class FxGraphEditorPane extends EditorPane {
 			const result = generateLua(doc as GraphDoc, { source: uri.path.split('/').pop() ?? '<fxgraph>' });
 			const luaUri = uri.with({ path: uri.path.replace(/\.fxgraph$/, '.lua') });
 			await this.fileService.writeFile(luaUri, VSBuffer.fromString(result.source));
-			if (result.errors.length > 0) {
-				this.logService.warn(`[cfx] fxgraph autosave: ${result.errors.length} codegen warning(s)`);
+
+			// Always post diagnostics — including an empty list — so the
+			// banner clears on a clean save. `docVersion` lets the
+			// webview discard stale results after a fast tab-switch.
+			this.webviewMD.value?.postMessage({
+				type: 'diagnostics',
+				docVersion,
+				diagnostics: result.diagnostics,
+			});
+			const errorCount = result.diagnostics.filter((d) => d.severity === 'error').length;
+			if (errorCount > 0) {
+				this.logService.warn(`[cfx] fxgraph autosave: ${errorCount} codegen error(s)`);
 			}
+
 			// .fxgraph wrote successfully — the canonical source is on
 			// disk, so the tab is clean. (.lua sibling is a generated
-			// artifact; its codegen-error state is surfaced separately
-			// to the webview in Slice B.)
+			// artifact; its codegen-error state is surfaced via the
+			// diagnostics message above, not via the dirty flag.)
 			input?.setDirty(false);
 			return true;
 		} catch (err) {

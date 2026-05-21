@@ -7,6 +7,7 @@ export * from './types.js';
 export * from './doc.js';
 export * from './sig-to-node.js';
 export * from './codegen.js';
+export * from './diagnostics.js';
 export * from './stdlib.js';
 export * from './events.js';
 export * from './runtime-helpers.js';
