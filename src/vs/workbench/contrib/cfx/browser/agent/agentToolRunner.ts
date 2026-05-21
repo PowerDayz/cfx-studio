@@ -201,6 +201,9 @@ class AgentToolRunner extends Disposable implements IAgentToolRunner {
 		}
 
 		const content = await this.fileService.readFile(uri);
+		// Re-check after read: some file providers don't populate stat.size,
+		// so the pre-check above can let oversize files through.
+		assertWithinReadCap(content.value.byteLength, path);
 		const text = content.value.toString();
 		const allLines = text.split(/\r?\n/);
 		const truncated = allLines.length > lineLimit;
@@ -256,7 +259,9 @@ class AgentToolRunner extends Disposable implements IAgentToolRunner {
 			throw new Error('path must end in .fxgraph');
 		}
 		const { uri } = this.resolveWorkspaceFile(path);
+		await this.assertWithinReadCapStat(uri, path);
 		const content = await this.fileService.readFile(uri);
+		assertWithinReadCap(content.value.byteLength, path);
 		try {
 			return JSON.parse(content.value.toString()) as GraphDoc;
 		} catch (err) {
@@ -270,7 +275,9 @@ class AgentToolRunner extends Disposable implements IAgentToolRunner {
 			throw new Error('path must end in .fxgraph');
 		}
 		const { uri, basename } = this.resolveWorkspaceFile(path);
+		await this.assertWithinReadCapStat(uri, path);
 		const content = await this.fileService.readFile(uri);
+		assertWithinReadCap(content.value.byteLength, path);
 		let doc: GraphDoc;
 		try {
 			doc = JSON.parse(content.value.toString()) as GraphDoc;
@@ -323,6 +330,19 @@ class AgentToolRunner extends Disposable implements IAgentToolRunner {
 			return filePath.slice(rootPath.length + 1);
 		}
 		return filePath;
+	}
+
+	private async assertWithinReadCapStat(uri: URI, path: string): Promise<void> {
+		const stat = await this.fileService.stat(uri);
+		if (stat.size !== undefined && stat.size > READ_FILE_MAX_BYTES) {
+			throw new Error(`file too large (${stat.size} bytes; cap is ${READ_FILE_MAX_BYTES}). Refusing to read ${path}.`);
+		}
+	}
+}
+
+function assertWithinReadCap(byteLength: number, path: string): void {
+	if (byteLength > READ_FILE_MAX_BYTES) {
+		throw new Error(`file too large (${byteLength} bytes; cap is ${READ_FILE_MAX_BYTES}). Refusing to read ${path}.`);
 	}
 }
 

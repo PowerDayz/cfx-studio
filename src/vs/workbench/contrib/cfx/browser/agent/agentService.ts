@@ -89,9 +89,11 @@ class AgentService extends Disposable implements IAgentService {
 		this.currentTurnCancel = cancelSource;
 		try {
 			await this.runLoop(cancelSource.token);
-			if (!cancelSource.token.isCancellationRequested) {
-				this.setState('idle');
-			}
+			// Always settle back to 'idle' once the loop exits, whether
+			// it completed naturally or was cancelled. Without this, a
+			// user cancel leaves the agent stuck in 'awaiting_model' /
+			// 'running_tool' and blocks the next send().
+			this.setState('idle');
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			this.logService.error('[cfx.agent] turn errored', err);

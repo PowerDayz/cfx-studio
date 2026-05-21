@@ -5,6 +5,7 @@
 
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { Emitter } from '../../../../../base/common/event.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
 import { InstantiationType, registerSingleton } from '../../../../../platform/instantiation/common/extensions.js';
 import {
 	isSecretConvar,
@@ -37,6 +38,7 @@ class SecretRegistry extends Disposable implements ISecretRegistry {
 
 	constructor(
 		@IServerCfgService private readonly serverCfg: IServerCfgService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 		this._register(serverCfg.onDidChange(() => this.scheduleRefresh()));
@@ -55,7 +57,13 @@ class SecretRegistry extends Disposable implements ISecretRegistry {
 			this.pending = true;
 			return;
 		}
-		this.inFlight = this.refresh().finally(() => {
+		// Swallow refresh errors so a transient I/O or parse failure in
+		// IServerCfgService doesn't surface as an unhandled rejection in
+		// the renderer. The previous state stays in effect until the next
+		// onDidChange triggers another attempt.
+		this.inFlight = this.refresh().catch((err) => {
+			this.logService.error('[cfx.agent] secret registry refresh failed', err);
+		}).finally(() => {
 			this.inFlight = undefined;
 			if (this.pending) {
 				this.pending = false;

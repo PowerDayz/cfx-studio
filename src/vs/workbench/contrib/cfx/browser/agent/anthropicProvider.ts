@@ -79,16 +79,18 @@ class AnthropicProvider extends Disposable implements IAgentProvider {
 		// the caller never sees an unhandled rejection.
 		void this.runStream(req, controller.signal, onEvent).catch((err) => {
 			if (controller.signal.aborted) {
-				// Caller-initiated cancel; no event needed.
+				// Caller-initiated cancel: still emit a terminal event so
+				// AgentService.runTurn unblocks. Using message_end with an
+				// 'unknown' stopReason avoids surfacing the abort as a
+				// model error in the transcript; the orchestrator checks
+				// the cancellation token after the turn resolves.
+				onEvent.fire({ kind: 'message_end', stopReason: 'unknown' });
 				return;
 			}
 			const message = err instanceof Error ? err.message : String(err);
 			this.logService.error('[cfx.agent] provider error', err);
 			onEvent.fire({ kind: 'error', message });
 		}).finally(() => {
-			// Emit a terminal state if the stream ended without one
-			// (unusual — defensive). The view layer relies on either
-			// `message_end` or `error` to know the turn is over.
 			cancelSub.dispose();
 		});
 
@@ -186,9 +188,12 @@ async function parseSseStream(
 		try { reader.releaseLock(); } catch { /* ignore */ }
 	}
 
-	if (!signal.aborted) {
-		onEvent.fire({ kind: 'message_end', stopReason });
+	if (signal.aborted) {
+		// Surface as a rejection so runStream's caller catch handles the
+		// terminal event uniformly with mid-stream abort.
+		throw new DOMException('Aborted', 'AbortError');
 	}
+	onEvent.fire({ kind: 'message_end', stopReason });
 }
 
 function handleSseEvent(

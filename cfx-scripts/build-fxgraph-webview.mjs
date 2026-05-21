@@ -39,7 +39,7 @@ if (!existsSync(WEBVIEW_DIR)) {
 	process.exit(0);
 }
 
-const newestSrcMtime = walkNewestMtime(join(WEBVIEW_DIR, 'src'));
+const newestSrcMtime = walkNewestMtime(WEBVIEW_DIR);
 const bundleMtime = existsSync(BUNDLE) ? statSync(BUNDLE).mtimeMs : 0;
 
 if (bundleMtime >= newestSrcMtime && bundleMtime > 0) {

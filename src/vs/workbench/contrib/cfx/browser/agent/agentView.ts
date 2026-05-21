@@ -373,9 +373,14 @@ function stringifyToolInput(call: ToolCall): string {
 }
 
 function renderShellHtml(opts: { bundleJsUri: string; bundleCssUri: string }): string {
+	// The shell only loads bundle.js as an external module script and
+	// has no inline <script>, so 'unsafe-inline' is omitted from
+	// script-src to tighten the webview's attack surface. style-src
+	// keeps 'unsafe-inline' because the bundled CSS-in-JS layer emits
+	// runtime <style> tags.
 	const csp = [
 		`default-src 'none'`,
-		`script-src ${webviewGenericCspSource} 'unsafe-inline'`,
+		`script-src ${webviewGenericCspSource}`,
 		`style-src ${webviewGenericCspSource} 'unsafe-inline'`,
 		`font-src ${webviewGenericCspSource}`,
 		`img-src ${webviewGenericCspSource} data:`,
