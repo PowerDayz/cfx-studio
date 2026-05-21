@@ -105,17 +105,20 @@ class GameClientService extends Disposable implements IGameClientService {
 
 		const args = ['+connect', `${host}:${port}`, ...extraArgs];
 
-		// Heads-up if an instance of the game client is already running:
-		// we don't know whether the second launcher invocation will join
-		// the existing session, single-instance-lock-refuse, or duplicate.
-		// Surface the warning and let the user decide; spawn proceeds.
+		// If a game-client process is already running, refuse to spawn
+		// a second launcher. Behaviour of a duplicate spawn-while-running
+		// is unverified (no spike data) and could plausibly start a second
+		// game window that grabs input focus and tanks the host machine.
+		// Cheaper to bail with a non-blocking notification and let the
+		// user act.
 		if (await this.cfxNodeService.isGameClientRunning(kind)) {
 			const displayName = kind === 'redm' ? 'RedM' : 'FiveM';
 			this.notificationService.info(localize(
 				'cfx.gameClient.alreadyRunning',
-				'Cfx: {0} appears to be already running. The launcher may join your existing session to {1}:{2}, refuse to spawn a duplicate, or open a second window. If nothing happens, close existing {0} windows and try again.',
-				displayName, host, port,
+				'Cfx: {0} is already running. Connect manually from the existing window, or quit {0} and click Launch again.',
+				displayName,
 			));
+			return;
 		}
 
 		this.transition('launching');
