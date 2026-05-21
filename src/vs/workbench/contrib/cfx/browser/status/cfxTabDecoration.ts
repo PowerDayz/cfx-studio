@@ -3,6 +3,7 @@
  *  Licensed under the MIT License.
  *--------------------------------------------------------------------------------------------*/
 
+import { RunOnceScheduler } from '../../../../../base/common/async.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
@@ -15,6 +16,8 @@ import {
 	IWorkbenchContributionsRegistry,
 } from '../../../../common/contributions.js';
 import { LifecyclePhase } from '../../../../services/lifecycle/common/lifecycle.js';
+import { IFXServerService, ResourceRuntimeState } from '../../common/fxserver.js';
+import { IResourceDiscoveryService } from '../../common/resources.js';
 import { findResourceFolder } from '../graph/fxgraphCompiler.js';
 import { cfxIconRestartResource, RestartCurrentResourceAction } from './cfxTitlebarActions.js';
 
@@ -35,6 +38,17 @@ import { cfxIconRestartResource, RestartCurrentResourceAction } from './cfxTitle
  * tabs strip to redraw via `TabDecorations.notifyChanged()`. The cache
  * is invalidated on `fxmanifest.lua` add/delete events so a freshly
  * scaffolded resource picks up its tab buttons without a reload.
+ *
+ * The button only renders when FXServer is `running` AND the resource
+ * itself is `running`. Clicking it while either is down would silently
+ * no-op in `FXServerService.restartResource` — hiding the icon makes
+ * that explicit. Server-state and per-resource-state changes both
+ * trigger a tabs-strip redraw (coalesced via a small scheduler so
+ * bursts of resource events don't thrash the tabs strip). Per-resource
+ * runtime state is mirrored locally from
+ * `IFXServerService.onDidChangeResourceState` so the gate is correct
+ * even when state events arrive before discovery has scanned the
+ * resource.
  */
 class CfxTabDecorationContribution extends Disposable implements IWorkbenchContribution, ITabDecoration {
 
@@ -47,10 +61,38 @@ class CfxTabDecorationContribution extends Disposable implements IWorkbenchContr
 	private readonly cache = new Map<string, string>();
 	private readonly inflight = new Set<string>();
 
+	/**
+	 * Local mirror of per-resource runtime state, populated from
+	 * `IFXServerService.onDidChangeResourceState`. This protects the
+	 * visibility gate in `decorate` against the race where an FXServer
+	 * log event arrives before the initial discovery scan has seen the
+	 * resource: in that case `ResourceDiscoveryService.setRuntimeState`
+	 * early-returns and the discovery entry stays at `idle`, but our
+	 * local entry is correct. The local entry wins; we only fall back
+	 * to the discovery service when we've never seen an event for the
+	 * resource. Cleared whenever the server is not actively
+	 * running/starting, so stale `running` cannot survive a stop/start.
+	 */
+	private readonly resourceStates = new Map<string, ResourceRuntimeState>();
+
+	/**
+	 * Coalesces redraw requests. `onDidChangeResources` can fire in
+	 * bursts (every ensure refresh, every resource runtime-state
+	 * transition), and `notifyChanged()` immediately drives the global
+	 * tabs-strip redraw signal with no internal debouncing. A short
+	 * delay collapses bursts into a single redraw without introducing
+	 * user-visible lag.
+	 */
+	private readonly redrawScheduler: RunOnceScheduler;
+
 	constructor(
 		@IFileService private readonly fileService: IFileService,
+		@IFXServerService private readonly fxServer: IFXServerService,
+		@IResourceDiscoveryService private readonly discoveryService: IResourceDiscoveryService,
 	) {
 		super();
+
+		this.redrawScheduler = this._register(new RunOnceScheduler(() => TabDecorations.notifyChanged(), 50));
 
 		this._register(TabDecorations.register(this));
 
@@ -64,9 +106,27 @@ class CfxTabDecorationContribution extends Disposable implements IWorkbenchContr
 			const touchesManifest = (uri: URI) => uri.path.endsWith('/fxmanifest.lua') || uri.path.endsWith('/__resource.lua');
 			if (e.rawAdded.some(touchesManifest) || e.rawDeleted.some(touchesManifest)) {
 				this.cache.clear();
-				TabDecorations.notifyChanged();
+				this.redrawScheduler.schedule();
 			}
 		}));
+
+		// Server lifecycle and per-resource runtime state both gate
+		// visibility (see `decorate`). Either changing means tabs need
+		// to redraw — name resolutions are unaffected, so we keep the
+		// cache intact. When the server leaves the running/starting
+		// window, drop the local runtime-state mirror so a stale
+		// `running` cannot survive a restart.
+		this._register(this.fxServer.onDidChangeState((state) => {
+			if (state !== 'running' && state !== 'starting') {
+				this.resourceStates.clear();
+			}
+			this.redrawScheduler.schedule();
+		}));
+		this._register(this.fxServer.onDidChangeResourceState((evt) => {
+			this.resourceStates.set(evt.resourceName, evt.state);
+			this.redrawScheduler.schedule();
+		}));
+		this._register(this.discoveryService.onDidChangeResources(() => this.redrawScheduler.schedule()));
 	}
 
 	decorate(resource: URI | undefined): ITabDecorationDescriptor | null {
@@ -80,6 +140,18 @@ class CfxTabDecorationContribution extends Disposable implements IWorkbenchContr
 			return null;
 		}
 		if (cached === '') {
+			return null;
+		}
+		if (this.fxServer.state !== 'running') {
+			return null;
+		}
+		// Prefer the local mirror — it can't miss the early-arrival
+		// race described on `resourceStates`. Fall back to the discovery
+		// service only when we've never observed an event for this
+		// resource (e.g. it was already running when the IDE attached).
+		const runtimeState = this.resourceStates.get(cached)
+			?? this.discoveryService.getResourceByName(cached)?.runtimeState;
+		if (runtimeState !== 'running') {
 			return null;
 		}
 		return {
@@ -105,7 +177,7 @@ class CfxTabDecorationContribution extends Disposable implements IWorkbenchContr
 				this.cache.set(key, '');
 			} finally {
 				this.inflight.delete(key);
-				TabDecorations.notifyChanged();
+				this.redrawScheduler.schedule();
 			}
 		})();
 	}
