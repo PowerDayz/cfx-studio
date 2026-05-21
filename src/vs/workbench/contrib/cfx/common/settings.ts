@@ -120,11 +120,12 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 	},
 });
 
-// Suppress the upstream Welcome / Getting Started page on fresh launches.
-// `workbench.startupEditor: 'none'` is the only gate
-// (welcomeGettingStarted/browser/startupPage.ts checks just this key).
-// Pairs with the import removal of welcomeGettingStarted + welcomeWalkthrough
-// in workbench.common.main.ts.
+// Suppress the upstream Welcome / Getting Started page on most fresh launches.
+// `workbench.startupEditor: 'none'` is the primary gate checked by
+// StartupPageRunnerContribution, but other flows (e.g. first-launch telemetry
+// opt-out, folder walkthrough logic) may still surface Getting Started
+// independently. Pairs with the import removal of welcomeGettingStarted +
+// welcomeWalkthrough in workbench.common.main.ts for full suppression.
 Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerDefaultConfigurations([
 	{
 		overrides: {
