@@ -31,6 +31,7 @@ import type {
 import { emptyGraphDoc, nextEdgeId } from '../../../../_shared/visual/doc.js';
 import { nodeVarSet, nodeVarGet, nodeCustomEvent, nodeCommand, nodeTriggerEvent } from '../../../../_shared/visual/sig-to-node.js';
 import { isAssignable, type EditorType } from '../../../../_shared/visual/types.js';
+import type { GraphDiagnostic } from '../../../../_shared/visual/diagnostics.js';
 
 import { vscode } from './messages';
 import { NODE_TYPES } from './nodes.js';
@@ -41,6 +42,13 @@ import './styles.css';
 interface FlowNodeData extends Record<string, unknown> {
 	bnode: BNode;
 	onPatch: (next: BNode) => void;
+	/**
+	 * Diagnostics raised by the trust analyzer that target this node.
+	 * Empty / undefined means the node renders without an overlay.
+	 * The node renderer picks the highest severity and applies a
+	 * border + tooltip listing the messages.
+	 */
+	nodeDiagnostics?: ReadonlyArray<GraphDiagnostic>;
 }
 
 const PIN_COLOR_MAP: Record<string, string> = {
@@ -86,6 +94,20 @@ const HISTORY_LIMIT = 50;
 
 function EditorInner() {
 	const [doc, setDoc] = useState<GraphDoc>(() => emptyGraphDoc());
+	// Diagnostics for the open .fxgraph, replaced wholesale on each
+	// host `diagnostics` message. Keyed by source nodeId so the node
+	// renderer can look up its own entries without scanning the full
+	// list per render.
+	const [diagnostics, setDiagnostics] = useState<ReadonlyArray<GraphDiagnostic>>([]);
+	const diagnosticsByNode = useMemo(() => {
+		const map = new Map<string, GraphDiagnostic[]>();
+		for (const d of diagnostics) {
+			if (!d.nodeId) { continue; }
+			const list = map.get(d.nodeId);
+			if (list) { list.push(d); } else { map.set(d.nodeId, [d]); }
+		}
+		return map;
+	}, [diagnostics]);
 	// The radial is the only quick-add palette. Triggered three ways:
 	//   - Space (centre on viewport, browse mode at the outer ring)
 	//   - Right-click on the canvas (anchored at cursor, same)
@@ -186,13 +208,18 @@ function EditorInner() {
 
 	useEffect(() => {
 		const handler = (e: MessageEvent) => {
-			const msg = e.data as { type: string; doc?: GraphDoc };
+			const msg = e.data as { type: string; doc?: GraphDoc; diagnostics?: ReadonlyArray<GraphDiagnostic> };
 			if (msg && msg.type === 'init' && msg.doc) {
 				// Loading a different doc resets history — undo/redo
 				// across document boundaries would be confusing.
 				pastRef.current = [];
 				futureRef.current = [];
 				setDoc(msg.doc as GraphDoc);
+				// Drop stale diagnostics when switching documents; the
+				// host re-sends a fresh set right after init.
+				setDiagnostics([]);
+			} else if (msg && msg.type === 'diagnostics') {
+				setDiagnostics(msg.diagnostics ?? []);
 			}
 		};
 		window.addEventListener('message', handler);
@@ -248,7 +275,7 @@ function EditorInner() {
 					id: bn.id,
 					type: 'blueprint',
 					position: prior?.dragging && prior.position ? prior.position : persistedPos,
-					data: { bnode: bn, onPatch: patchNode, missingPins },
+					data: { bnode: bn, onPatch: patchNode, missingPins, nodeDiagnostics: diagnosticsByNode.get(bn.id) },
 					deletable: bn.kind !== 'event' || doc.nodes.filter((n) => n.kind === 'event').length > 1,
 					// Comments behave as a background label: the inner body
 					// is click-through (`pointer-events: none`), and the
@@ -261,7 +288,7 @@ function EditorInner() {
 				};
 			}),
 		);
-	}, [doc, patchNode, missingPins, setNodes]);
+	}, [doc, patchNode, missingPins, diagnosticsByNode, setNodes]);
 
 	// Exec edges render as animated dashed white "thread of execution"
 	// lines (the deprecated editor's signature look). Value edges use a

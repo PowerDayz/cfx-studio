@@ -8,6 +8,7 @@ import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react';
 
 import type { BNode, PinDef } from '../../../../_shared/visual/doc.js';
 import type { EditorType } from '../../../../_shared/visual/types.js';
+import { type GraphDiagnostic, GraphDiagnosticSeverity } from '../../../../_shared/visual/diagnostics.js';
 import { InlineValueEditor } from './InlineEditor.js';
 
 /**
@@ -42,6 +43,35 @@ interface FlowData extends Record<string, unknown> {
 	 * usually wrong at runtime, hence the visual flag.
 	 */
 	missingPins?: ReadonlySet<string>;
+	/**
+	 * Diagnostics raised by the trust analyzer that target this node.
+	 * Empty / undefined renders without an overlay.
+	 */
+	nodeDiagnostics?: ReadonlyArray<GraphDiagnostic>;
+}
+
+/**
+ * Computes overlay attributes from the analyzer diagnostics for one
+ * node. Returns the highest-severity class suffix and a newline-
+ * separated tooltip; both are spread onto the outer `.bnode` div in
+ * every node-type component.
+ */
+function diagOverlay(data: FlowData): { className: string; title: string | undefined } {
+	const diags = data.nodeDiagnostics;
+	if (!diags || diags.length === 0) {
+		return { className: '', title: undefined };
+	}
+	const sev =
+		diags.some((d) => d.severity === GraphDiagnosticSeverity.Error) ? 'error' :
+		diags.some((d) => d.severity === GraphDiagnosticSeverity.Warning) ? 'warning' :
+		'info';
+	const title = diags.map((d) => `[${d.severity}] ${d.message}`).join('\n\n');
+	return { className: `diag-${sev}`, title };
+}
+
+function bnodeClass(kind: string, data: FlowData): string {
+	const overlay = diagOverlay(data).className;
+	return overlay ? `bnode kind-${kind} ${overlay}` : `bnode kind-${kind}`;
 }
 
 const PIN_COLOR: Record<string, string> = {
@@ -86,8 +116,9 @@ const EventNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	// one is missing so the node title isn't blank for older files.
 	const eventName = n.event || (n as { eventName?: string }).eventName || '???';
 	const out = n.outExec[0];
+	const overlay = diagOverlay(data);
 	return (
-		<div className="bnode kind-event">
+		<div className={bnodeClass('event', data)} title={overlay.title}>
 			<div className="header">
 				<span>⚡ on {eventName}</span>
 			</div>
@@ -108,8 +139,9 @@ const EventNode: React.FC<{ data: FlowData }> = ({ data }) => {
 const ExecCallNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'exec-call' }>;
 	const title = n.callee === 'invoke_native' && n.nativeName ? nativeDisplay(n.nativeName) : n.callee;
+	const overlay = diagOverlay(data);
 	return (
-		<div className="bnode kind-exec-call">
+		<div className={bnodeClass('exec-call', data)} title={overlay.title}>
 			<div className="header">
 				<span>{title}</span>
 				{n.nativeHash && <span style={{ fontSize: 10, opacity: 0.7 }}>{n.nativeHash}</span>}
@@ -147,8 +179,9 @@ const ExecCallNode: React.FC<{ data: FlowData }> = ({ data }) => {
 
 const ControlNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'control' }>;
+	const overlay = diagOverlay(data);
 	return (
-		<div className="bnode kind-control">
+		<div className={bnodeClass('control', data)} title={overlay.title}>
 			<div className="header">
 				<span>{n.op}</span>
 			</div>
@@ -181,8 +214,9 @@ const ControlNode: React.FC<{ data: FlowData }> = ({ data }) => {
 const PureNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'pure' }>;
 	const title = n.callee === 'invoke_native' && n.nativeName ? nativeDisplay(n.nativeName) : n.callee;
+	const overlay = diagOverlay(data);
 	return (
-		<div className="bnode kind-pure">
+		<div className={bnodeClass('pure', data)} title={overlay.title}>
 			<div className="header"><span>{title}</span></div>
 			{n.argPins.map((p) => (
 				<PinRow
@@ -205,8 +239,9 @@ const PureNode: React.FC<{ data: FlowData }> = ({ data }) => {
 
 const LiteralNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'literal' }>;
+	const overlay = diagOverlay(data);
 	return (
-		<div className="bnode kind-literal">
+		<div className={bnodeClass('literal', data)} title={overlay.title}>
 			<div className="header"><span>{n.valueType} literal</span></div>
 			<div className="pin-row">
 				<div className="pin left" style={{ paddingLeft: 12 }}>
@@ -227,8 +262,9 @@ const LiteralNode: React.FC<{ data: FlowData }> = ({ data }) => {
 
 const VarGetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'var-get' }>;
+	const overlay = diagOverlay(data);
 	return (
-		<div className="bnode kind-var-get">
+		<div className={bnodeClass('var-get', data)} title={overlay.title}>
 			<div className="header"><span>get {n.name}</span></div>
 			<div className="pin-row">
 				<div />
@@ -243,8 +279,9 @@ const VarGetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 
 const VarSetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'var-set' }>;
+	const overlay = diagOverlay(data);
 	return (
-		<div className="bnode kind-var-set">
+		<div className={bnodeClass('var-set', data)} title={overlay.title}>
 			<div className="header"><span>set {n.name}</span></div>
 			<div className="pin-row exec">
 				<div className="pin left">
@@ -271,8 +308,9 @@ const VarSetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 const CommandNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'command' }>;
 	const out = n.outExec[0];
+	const overlay = diagOverlay(data);
 	return (
-		<div className="bnode kind-command">
+		<div className={bnodeClass('command', data)} title={overlay.title}>
 			<div className="header">
 				<span>⚙ /{n.command || '???'}</span>
 				{n.restricted && <span style={{ fontSize: 10, opacity: 0.7 }}>restricted</span>}

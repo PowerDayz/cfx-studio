@@ -26,10 +26,12 @@ import { IOverlayWebview, IWebviewService, WebviewContentPurpose } from '../../.
 import { asWebviewUri, webviewGenericCspSource } from '../../../webview/common/webview.js';
 import { IGameModeService } from '../../common/gameMode.js';
 import { INativesService } from '../../common/natives.js';
+import { ICfxGraphDiagnosticsService } from '../../common/cfxGraphDiagnostics.js';
 import type { HostToWebviewMessage, WebviewToHostMessage } from '../../common/fxgraphMessages.js';
 import { FxGraphEditorInput } from './fxgraphEditorInput.js';
 import { generateLua } from '../../_shared/visual/codegen.js';
-import type { GraphDoc } from '../../_shared/visual/doc.js';
+import { analyze } from '../../_shared/visual/diagnostics.js';
+import { isGraphDoc, type GraphDoc } from '../../_shared/visual/doc.js';
 
 const MEDIA_DIR_REL = 'vs/workbench/contrib/cfx/browser/graph/media/fxgraph';
 
@@ -70,8 +72,24 @@ export class FxGraphEditorPane extends EditorPane {
 		@INotificationService private readonly notificationService: INotificationService,
 		@ILogService private readonly logService: ILogService,
 		@INativesService private readonly nativesService: INativesService,
+		@ICfxGraphDiagnosticsService private readonly diagnosticsService: ICfxGraphDiagnosticsService,
 	) {
 		super(FxGraphEditorPane.ID, group, telemetryService, themeService, storageService);
+		// Forward diagnostics to the webview whenever the service emits
+		// for the open URI. Covers both our own publishes from
+		// `flushSave` and any external publishes (e.g. a peer file
+		// changing in a future cross-graph rule).
+		this._register(this.diagnosticsService.onDidChangeDiagnostics((e) => {
+			if (!this.currentResource) { return; }
+			if (e.resource.toString() !== this.currentResource.toString()) { return; }
+			this.postOrBuffer({ type: 'diagnostics', diagnostics: e.diagnostics });
+		}));
+	}
+
+	private postOrBuffer(msg: HostToWebviewMessage): void {
+		if (this.webviewReady) {
+			this.webviewMD.value?.postMessage(msg);
+		}
 	}
 
 	protected createEditor(parent: HTMLElement): void {
@@ -126,6 +144,22 @@ export class FxGraphEditorPane extends EditorPane {
 			this.webviewMD.value?.postMessage(init);
 		} else {
 			this.pendingInit = init;
+		}
+
+		// Publish initial diagnostics for this file. The service fires
+		// onDidChangeDiagnostics → our subscription posts to the
+		// webview when it's ready; the 'ready' handler below also
+		// re-posts to cover the buffered case.
+		this.publishDiagnostics(input.resource, doc);
+	}
+
+	private publishDiagnostics(resource: import('../../../../../base/common/uri.js').URI, doc: unknown): void {
+		if (!isGraphDoc(doc)) { return; }
+		try {
+			const diagnostics = analyze(doc);
+			this.diagnosticsService.set(resource, diagnostics);
+		} catch (err) {
+			this.logService.error(`[cfx] fxgraph diagnostics analyze failed for ${resource.toString()}`, err);
 		}
 	}
 
@@ -212,6 +246,14 @@ export class FxGraphEditorPane extends EditorPane {
 					this.webviewMD.value?.postMessage(this.pendingInit);
 					this.pendingInit = undefined;
 				}
+				// Replay the latest diagnostics for the open URI now
+				// that the webview is listening. The onDidChange
+				// subscription drops messages posted while
+				// `webviewReady === false`.
+				if (this.currentResource) {
+					const cached = this.diagnosticsService.get(this.currentResource);
+					this.webviewMD.value?.postMessage({ type: 'diagnostics', diagnostics: cached });
+				}
 				break;
 			case 'change':
 				// Persist the doc to disk + regenerate the sibling .lua.
@@ -256,6 +298,12 @@ export class FxGraphEditorPane extends EditorPane {
 			if (result.errors.length > 0) {
 				this.logService.warn(`[cfx] fxgraph autosave: ${result.errors.length} codegen warning(s)`);
 			}
+
+			// Refresh diagnostics after every save so the trust analyzer
+			// matches the on-disk doc + generated Lua. The service
+			// fires onDidChangeDiagnostics → our subscription forwards
+			// to the webview.
+			this.publishDiagnostics(uri, doc);
 		} catch (err) {
 			this.logService.error(`[cfx] failed to autosave ${uri.toString()}`, err);
 		}

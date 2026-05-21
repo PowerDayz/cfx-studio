@@ -340,3 +340,24 @@ html, body, #cfx-fxgraph-root {
 @media (prefers-reduced-motion: reduce) {
 	.radial-menu button.dial-wedge { transition: none !important; }
 }
+
+/* Trust analyzer diagnostic overlays. Border colour reflects the
+ * highest severity raised against the node; the `title` attribute on
+ * the .bnode div carries the message list as a hover tooltip. Uses
+ * VSCode's editor error/warning palette so the overlays match the
+ * surrounding chrome regardless of theme. */
+.bnode.diag-error {
+	border-color: var(--vscode-editorError-foreground, #f48771);
+	box-shadow: 0 0 0 1px var(--vscode-editorError-foreground, #f48771),
+		0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.bnode.diag-warning {
+	border-color: var(--vscode-editorWarning-foreground, #cca700);
+	box-shadow: 0 0 0 1px var(--vscode-editorWarning-foreground, #cca700),
+		0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.bnode.diag-info {
+	border-color: var(--vscode-editorInfo-foreground, #75beff);
+	box-shadow: 0 0 0 1px var(--vscode-editorInfo-foreground, #75beff),
+		0 2px 6px rgba(0, 0, 0, 0.3);
+}

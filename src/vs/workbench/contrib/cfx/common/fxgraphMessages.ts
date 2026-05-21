@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { GameMode } from './gameMode.js';
+import type { GraphDiagnostic } from './cfxGraphDiagnostics.js';
 
 /**
  * Host ↔ webview message protocol for the .fxgraph visual editor.
@@ -36,7 +37,18 @@ export type HostToWebviewMessage =
 			results: string;
 		}>;
 	}
-	| { type: 'function-table-update'; functions: ReadonlyArray<{ name: string; params: ReadonlyArray<{ name: string; type: string }> }> };
+	| { type: 'function-table-update'; functions: ReadonlyArray<{ name: string; params: ReadonlyArray<{ name: string; type: string }> }> }
+	| {
+		/**
+		 * Latest analyzer output for the open document. Sent on every
+		 * save (after the .lua codegen) and any time the diagnostics
+		 * service emits a change for this URI. An empty array means
+		 * "all previous diagnostics cleared" — the webview must replace,
+		 * not merge.
+		 */
+		type: 'diagnostics';
+		diagnostics: ReadonlyArray<GraphDiagnostic>;
+	};
 
 /** Sent webview → host. */
 export type WebviewToHostMessage =
