@@ -111,6 +111,18 @@ export function generateLua(doc: GraphDoc, opts: CodegenOptions = {}): { source:
 
 	function calleeLua(node: BNode): string {
 		if (node.kind === 'pure' || node.kind === 'exec-call') {
+			// Trigger-event exec-calls don't emit their callee as an
+			// identifier — `callExpr` rewrites them to
+			// `TriggerEvent('<triggerEventName>', …)` where the event
+			// name is a string literal. The internal callee value
+			// (e.g. `trigger:gang-test:spawnVehicle`) is never written
+			// out, so don't run it through safeIdent — that would
+			// produce a spurious `codegen:invalid-ident` diagnostic
+			// for the hyphen/colon characters that FiveM event names
+			// canonically contain. The sentinel is unused.
+			if (node.kind === 'exec-call' && node.triggerEventName) {
+				return '';
+			}
 			if (node.callee === 'invoke_native') {
 				// Prefer the catalog-PascalCase form (the form the FiveM
 				// Lua runtime actually exposes). The hash-fallback path

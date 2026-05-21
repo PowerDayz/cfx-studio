@@ -62,6 +62,14 @@ export class FxGraphEditorPane extends EditorPane {
 	private saveTimer: ReturnType<typeof setTimeout> | undefined;
 	private pendingSaveDoc: unknown;
 	/**
+	 * URI we've most recently surfaced a save-failure notification for.
+	 * Used to dedupe toasts when autosave keeps failing (e.g. the file
+	 * is locked by another process and every 300 ms debounce retries).
+	 * Cleared on the next successful write so the user sees a fresh
+	 * notification if it fails again later.
+	 */
+	private lastSaveErrorUri: string | undefined;
+	/**
 	 * Monotonic per-pane document version. Bumped on every `setInput` so
 	 * the webview can ignore in-flight `diagnostics` and `lua-preview`
 	 * messages that belong to a previous document.
@@ -313,6 +321,9 @@ export class FxGraphEditorPane extends EditorPane {
 			// Only clear after the canonical write succeeds — if it threw,
 			// the snapshot stays so the next flush retries.
 			this.pendingSaveDoc = undefined;
+			// Reset save-failure dedup so a future failure (e.g. the
+			// user re-locks the file) surfaces a fresh notification.
+			this.lastSaveErrorUri = undefined;
 
 			// Regenerate the sibling .lua so the runtime sees the change
 			// without the user manually running cfx.fxgraph.compile. We
@@ -350,7 +361,24 @@ export class FxGraphEditorPane extends EditorPane {
 			return true;
 		} catch (err) {
 			this.logService.error(`[cfx] failed to autosave ${uri.toString()}`, err);
-			// Leave dirty=true so the user knows the write didn't land.
+			// Surface the failure to the user — the dirty flag stays on
+			// (the tab still shows "●") but without a notification the
+			// user has no reason to think anything went wrong, since
+			// the visual edit they just made is still present in the
+			// webview. Dedupe by URI so a sustained lock (file held by
+			// another process) doesn't fire a toast every 300 ms.
+			const uriStr = uri.toString();
+			if (this.lastSaveErrorUri !== uriStr) {
+				this.lastSaveErrorUri = uriStr;
+				const filename = uri.path.split('/').pop() ?? '<fxgraph>';
+				this.notificationService.error(localize(
+					'cfx.fxgraph.saveFailed',
+					'Cfx: failed to save {0}: {1}',
+					filename,
+					err instanceof Error ? err.message : String(err),
+				));
+			}
+			// Leave dirty=true so the tab indicator stays on too.
 			return false;
 		}
 	}
