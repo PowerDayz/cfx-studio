@@ -1,11 +1,15 @@
 ---
 name: Feature request
-about: Suggest an idea for this project
-
+about: Suggest an idea for Cfx Studio
 ---
 
-<!-- ⚠️⚠️ Do Not Delete This! feature_request_template ⚠️⚠️ -->
-<!-- Please read our Rules of Conduct: https://opensource.microsoft.com/codeofconduct/ -->
-<!-- Please search existing issues to avoid creating duplicates. -->
+<!-- Search existing issues first to avoid duplicates. -->
 
-<!-- Describe the feature you'd like. -->
+**The problem**
+<!-- What are you trying to do that Cfx Studio makes hard today? -->
+
+**Proposed solution**
+<!-- What you'd like to see. -->
+
+**Alternatives considered**
+<!-- Optional. -->
