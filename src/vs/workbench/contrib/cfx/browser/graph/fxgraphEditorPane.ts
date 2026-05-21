@@ -30,6 +30,8 @@ import type { HostToWebviewMessage, WebviewToHostMessage } from '../../common/fx
 import { FxGraphEditorInput } from './fxgraphEditorInput.js';
 import { generateLua } from '../../_shared/visual/codegen.js';
 import type { GraphDoc } from '../../_shared/visual/doc.js';
+import { migrateGraphDoc } from '../../_shared/visual/migrate.js';
+import { GraphDiagnosticCollector } from '../../_shared/visual/diagnostics.js';
 
 const MEDIA_DIR_REL = 'vs/workbench/contrib/cfx/browser/graph/media/fxgraph';
 
@@ -109,12 +111,24 @@ export class FxGraphEditorPane extends EditorPane {
 			return;
 		}
 
-		// Read + parse the .fxgraph file.
-		let doc: unknown;
+		// Read + parse + migrate the .fxgraph file. The migrator validates
+		// the shape and gives us a typed `GraphDoc` instead of an unsafe
+		// cast; any failure routes through diagnostics so the user sees
+		// the same banner UX as codegen errors.
+		let doc: GraphDoc;
 		try {
 			const content = await this.fileService.readFile(input.resource);
 			if (token.isCancellationRequested) { return; }
-			doc = JSON.parse(content.value.toString());
+			const raw = JSON.parse(content.value.toString());
+			const diags = new GraphDiagnosticCollector();
+			const migrated = migrateGraphDoc(raw, diags);
+			if (!migrated) {
+				const reasons = diags.all().map((d) => d.message).join('; ') || 'unknown error';
+				this.logService.error(`[cfx] migrateGraphDoc failed for ${input.resource.toString()}: ${reasons}`);
+				this.notificationService.error(localize('cfx.fxgraph.migrateFailed', 'Cfx: failed to load {0}: {1}', input.resource.path, reasons));
+				return;
+			}
+			doc = migrated;
 		} catch (err) {
 			this.logService.error(`[cfx] failed to read .fxgraph ${input.resource.toString()}`, err);
 			this.notificationService.error(localize('cfx.fxgraph.readFailed', 'Cfx: failed to load {0}: {1}', input.resource.path, String(err)));
@@ -123,8 +137,7 @@ export class FxGraphEditorPane extends EditorPane {
 
 		// Track the doc's declared scope so palette native searches can
 		// be filtered (client / server / shared).
-		const scope = (doc as { scope?: string } | undefined)?.scope;
-		this.currentScope = scope === 'server' || scope === 'shared' ? scope : 'client';
+		this.currentScope = doc.scope === 'server' || doc.scope === 'shared' ? doc.scope : 'client';
 
 		// Resolve per-resource game mode (walks up to fxmanifest.lua).
 		const folder = input.resource.with({ path: input.resource.path.replace(/\/[^/]+$/, '') });
