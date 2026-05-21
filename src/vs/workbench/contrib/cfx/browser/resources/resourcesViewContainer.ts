@@ -27,10 +27,11 @@ const cfxViewIcon = registerIcon(
 );
 
 /**
- * Cfx Studio's single sidebar entry. Hosts the Resources view (Phase B)
- * and any future sidebar-located views. Located in the Sidebar (left
- * side) at order 0 so it lands first when Explorer is hidden by the
- * configurationDefaults patch.
+ * Cfx Studio's single sidebar entry. Hosts the Resources view (top)
+ * and the Natives reference view (bottom, registered separately in
+ * natives/nativesViewContainer.ts). Located in the Sidebar (left side)
+ * at order 0; Explorer / Search / SCM imports are gone from
+ * workbench.common.main.ts so this is the only sidebar container.
  */
 export const CFX_VIEW_CONTAINER: ViewContainer = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry).registerViewContainer(
 	{

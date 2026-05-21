@@ -119,3 +119,16 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 		},
 	},
 });
+
+// Suppress the upstream Welcome / Getting Started page on fresh launches.
+// `workbench.startupEditor: 'none'` is the only gate
+// (welcomeGettingStarted/browser/startupPage.ts checks just this key).
+// Pairs with the import removal of welcomeGettingStarted + welcomeWalkthrough
+// in workbench.common.main.ts.
+Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerDefaultConfigurations([
+	{
+		overrides: {
+			'workbench.startupEditor': 'none',
+		},
+	},
+]);
