@@ -3,8 +3,9 @@
  *  Licensed under the MIT License.
  *--------------------------------------------------------------------------------------------*/
 
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
-import { mkdir } from 'fs/promises';
+import { spawn, ChildProcess, ChildProcessWithoutNullStreams } from 'child_process';
+import { mkdir, stat } from 'fs/promises';
+import * as path from 'path';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
@@ -14,6 +15,9 @@ import {
 	IFXServerOutputEvent,
 	IFXServerExitEvent,
 	IExtractArgs,
+	IGameClientSpawnArgs,
+	IGameClientExitEvent,
+	GameClientKind,
 } from '../common/cfxNodeService.js';
 
 const STOP_GRACE_MS = 3000;
@@ -33,12 +37,16 @@ export class CfxNodeService extends Disposable implements ICfxNodeService {
 	declare readonly _serviceBrand: undefined;
 
 	private readonly procs = new Map<string, ChildProcessWithoutNullStreams>();
+	private readonly gameClients = new Map<string, ChildProcess>();
 
 	private readonly _onFxServerOutput = this._register(new Emitter<IFXServerOutputEvent>());
 	readonly onFxServerOutput: Event<IFXServerOutputEvent> = this._onFxServerOutput.event;
 
 	private readonly _onFxServerExit = this._register(new Emitter<IFXServerExitEvent>());
 	readonly onFxServerExit: Event<IFXServerExitEvent> = this._onFxServerExit.event;
+
+	private readonly _onGameClientExit = this._register(new Emitter<IGameClientExitEvent>());
+	readonly onGameClientExit: Event<IGameClientExitEvent> = this._onGameClientExit.event;
 
 	async spawnFxServer(args: IFXServerSpawnArgs): Promise<string> {
 		const spawnId = generateUuid();
@@ -88,6 +96,97 @@ export class CfxNodeService extends Disposable implements ICfxNodeService {
 		}, STOP_GRACE_MS);
 	}
 
+	async spawnGameClient(args: IGameClientSpawnArgs): Promise<string> {
+		const spawnId = generateUuid();
+
+		// `detached: true` + `stdio: 'ignore'` + `proc.unref()`: the game
+		// becomes a fully independent process. We still receive an 'exit'
+		// event when it terminates (Node keeps the handle around), but the
+		// game survives an IDE crash and the IDE can quit without orphaned
+		// pipes blocking shutdown. `windowsHide: true` only suppresses our
+		// own (hidden) console window; the game's own window is unaffected.
+		//
+		// Sync errors propagate back to the renderer via Promise rejection
+		// (matches the FXServer spawn convention). Async errors come through
+		// onGameClientExit with errorMessage populated.
+		const proc: ChildProcess = spawn(args.exePath, [...args.args], {
+			detached: true,
+			stdio: 'ignore',
+			windowsHide: true,
+		});
+
+		this.gameClients.set(spawnId, proc);
+
+		proc.on('exit', (code, signal) => {
+			this.gameClients.delete(spawnId);
+			this._onGameClientExit.fire({ spawnId, code, signal });
+		});
+		proc.on('error', (err) => {
+			if (this.gameClients.has(spawnId)) {
+				this.gameClients.delete(spawnId);
+				this._onGameClientExit.fire({
+					spawnId,
+					code: null,
+					signal: null,
+					errorMessage: String(err),
+				});
+			}
+		});
+
+		proc.unref();
+		return spawnId;
+	}
+
+	async killGameClient(spawnId: string): Promise<void> {
+		const proc = this.gameClients.get(spawnId);
+		if (!proc) { return; }
+		try { proc.kill('SIGTERM'); } catch { /* */ }
+	}
+
+	async isGameClientRunning(kind: GameClientKind): Promise<boolean> {
+		if (process.platform !== 'win32') {
+			return false;
+		}
+		const exeName = kind === 'redm' ? 'RedM.exe' : 'FiveM.exe';
+		try {
+			const output = await new Promise<string>((resolve, reject) => {
+				const proc = spawn('tasklist', ['/FI', `IMAGENAME eq ${exeName}`, '/NH', '/FO', 'CSV'], {
+					windowsHide: true,
+				});
+				let buf = '';
+				proc.stdout?.on('data', (b: Buffer) => { buf += b.toString('utf8'); });
+				proc.on('exit', (code) => code === 0 ? resolve(buf) : reject(new Error(`tasklist exit ${code}`)));
+				proc.on('error', reject);
+			});
+			// tasklist /NH /FO CSV emits one quoted row per match; emits
+			// "INFO: No tasks are running which match the specified criteria."
+			// (no quotes) when nothing matches. Cheapest discriminator is the
+			// presence of a quoted exe-name token.
+			return new RegExp(`^"${exeName}"`, 'm').test(output);
+		} catch {
+			return false;
+		}
+	}
+
+	async resolveDefaultGameClientPath(kind: GameClientKind): Promise<string | undefined> {
+		if (process.platform !== 'win32') {
+			return undefined;
+		}
+		const localAppData = process.env['LOCALAPPDATA'];
+		if (!localAppData) {
+			return undefined;
+		}
+		const exeName = kind === 'redm' ? 'RedM.exe' : 'FiveM.exe';
+		const dirName = kind === 'redm' ? 'RedM' : 'FiveM';
+		const candidate = path.join(localAppData, dirName, exeName);
+		try {
+			const st = await stat(candidate);
+			return st.isFile() ? candidate : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
 	async extractArchive(args: IExtractArgs): Promise<void> {
 		await mkdir(args.destDir, { recursive: true });
 
@@ -122,6 +221,10 @@ export class CfxNodeService extends Disposable implements ICfxNodeService {
 			try { proc.kill('SIGTERM'); } catch { /* */ }
 		}
 		this.procs.clear();
+		// Game-client processes intentionally outlive the IDE: the game is
+		// the user's window, not ours. We unref'd them at spawn time, so
+		// dropping references here is enough — no kill on dispose.
+		this.gameClients.clear();
 		super.dispose();
 	}
 }

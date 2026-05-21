@@ -5,6 +5,7 @@
 
 import { RawContextKey } from '../../../../../platform/contextkey/common/contextkey.js';
 import { FXServerState } from '../../common/fxserver.js';
+import { GameClientState } from '../../common/gameClient.js';
 
 /**
  * Centralised ContextKeys consumed by the title-bar action cluster, the
@@ -25,3 +26,9 @@ export const CFX_FXSERVER_STATE_KEY = new RawContextKey<FXServerState>('cfx.fxse
  * inside a Cfx resource (no `fxmanifest.lua` walking up).
  */
 export const CFX_ACTIVE_RESOURCE_KEY = new RawContextKey<string>('cfx.activeResource', '');
+
+/**
+ * Game-client (FiveM.exe / RedM.exe) lifecycle state. Drives the
+ * Launch / Kill title-bar action toggle and the status-bar chip.
+ */
+export const CFX_GAMECLIENT_STATE_KEY = new RawContextKey<GameClientState>('cfx.gameClient.state', 'idle');

@@ -17,7 +17,7 @@ import {
  * worrying about registration order.
  *
  * Setting IDs match the keys VSCode users see in `settings.json`. Every
- * setting belongs to one of: fxserver, console, lua, scaffold.
+ * setting belongs to one of: fxserver, gameClient, console, lua, scaffold.
  */
 Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerConfiguration({
 	id: 'cfx',
@@ -61,6 +61,63 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 			description: localize(
 				'cfx.fxserver.autoRestartDebounceMs.description',
 				'Debounce in milliseconds before auto-restart fires after a save. Coalesces rapid successive saves.',
+			),
+		},
+		'cfx.gameClient.fivemPath': {
+			type: 'string',
+			default: '',
+			scope: ConfigurationScope.MACHINE,
+			description: localize(
+				'cfx.gameClient.fivemPath.description',
+				'Absolute path to FiveM.exe. Empty falls back to %LOCALAPPDATA%/FiveM/FiveM.exe; if that does not exist, the IDE prompts on first launch.',
+			),
+		},
+		'cfx.gameClient.redmPath': {
+			type: 'string',
+			default: '',
+			scope: ConfigurationScope.MACHINE,
+			description: localize(
+				'cfx.gameClient.redmPath.description',
+				'Absolute path to RedM.exe. Empty falls back to %LOCALAPPDATA%/RedM/RedM.exe; if that does not exist, the IDE prompts on first launch.',
+			),
+		},
+		'cfx.gameClient.host': {
+			type: 'string',
+			default: '127.0.0.1',
+			scope: ConfigurationScope.WINDOW,
+			description: localize(
+				'cfx.gameClient.host.description',
+				'Host the game client connects to with `+connect`. Defaults to 127.0.0.1; override to point at a remote dev server.',
+			),
+		},
+		'cfx.gameClient.port': {
+			type: 'number',
+			default: 0,
+			minimum: 0,
+			maximum: 65535,
+			scope: ConfigurationScope.WINDOW,
+			description: localize(
+				'cfx.gameClient.port.description',
+				'Port the game client connects to. 0 (default) parses the port from `server.cfg`\'s `endpoint_add_tcp`; falls back to 30120 if absent.',
+			),
+		},
+		'cfx.gameClient.autoLaunch': {
+			type: 'boolean',
+			default: false,
+			scope: ConfigurationScope.WINDOW,
+			description: localize(
+				'cfx.gameClient.autoLaunch.description',
+				'When enabled, the game client launches automatically once FXServer transitions to `running`. Triggers at most once per server session.',
+			),
+		},
+		'cfx.gameClient.extraArgs': {
+			type: 'array',
+			items: { type: 'string' },
+			default: [],
+			scope: ConfigurationScope.WINDOW,
+			description: localize(
+				'cfx.gameClient.extraArgs.description',
+				'Additional command-line arguments appended after `+connect <host>:<port>` when launching the game client.',
 			),
 		},
 		'cfx.console.maxLinesPerBuffer': {

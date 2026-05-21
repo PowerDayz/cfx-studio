@@ -31,3 +31,8 @@ import './server/fxserverService.js';
 // download + extract. Composes IRequestService (HTTP) + ICfxNodeService
 // (extraction).
 import './server/artifactsService.js';
+
+// Side-effect import: registers IGameClientService (renderer-side
+// orchestrator for FiveM.exe / RedM.exe launch, delegates spawn to
+// ICfxNodeService).
+import './gameClient/gameClientService.js';
