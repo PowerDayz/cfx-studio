@@ -142,6 +142,28 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 		await this.addEnsure(newName);
 	}
 
+	async getConvars(): Promise<ReadonlyMap<string, string>> {
+		const root = await this.readRootDoc();
+		const out = new Map<string, string>();
+		if (!root) { return out; }
+		const chain = await findExecChain(
+			root,
+			(p) => this.readPath(p),
+			(cfg, rel) => this.resolveRelative(cfg, rel),
+		);
+		for (const cfgPath of chain) {
+			const text = await this.readPath(cfgPath);
+			if (text === null || text === undefined) { continue; }
+			const doc = parseServerCfg(text, cfgPath);
+			for (const line of doc.lines) {
+				if (line.cmd?.kind === 'set') {
+					out.set(line.cmd.key, line.cmd.value);
+				}
+			}
+		}
+		return out;
+	}
+
 	// ---- private helpers ----
 
 	private rebuildWatchers(): void {

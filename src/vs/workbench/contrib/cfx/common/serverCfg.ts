@@ -59,6 +59,17 @@ export interface IServerCfgService {
 	 */
 	renameEnsure(oldName: string, newName: string): Promise<void>;
 
+	/**
+	 * Flat map of every `set` / `sets` / `setr` directive value reachable
+	 * via the exec chain, keyed by convar name. Last write wins when a
+	 * convar is set multiple times (matches FXServer's runtime behavior).
+	 *
+	 * Used by the Cfx Agent's secret registry to identify license keys,
+	 * RCON passwords, and pattern-matched secret convars so the redactor
+	 * can mask those values before any tool output reaches the model.
+	 */
+	getConvars(): Promise<ReadonlyMap<string, string>>;
+
 	/** Fires when any reachable cfg file changes on disk. */
 	readonly onDidChange: Event<void>;
 }
