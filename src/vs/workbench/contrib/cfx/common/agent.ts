@@ -167,3 +167,32 @@ export interface IAgentService {
 }
 
 export const IAgentService = createDecorator<IAgentService>('cfxAgentService');
+
+// ---- Tool runner (renderer-side dispatch + redaction) ----
+
+export interface ToolExecResult {
+	/** JSON-stringified, secret-redacted tool result, ready to embed in a tool_result content block. */
+	readonly resultText: string;
+	readonly isError: boolean;
+	readonly redactionCount: number;
+}
+
+/**
+ * Renderer-side tool dispatcher. Layered above `ICfxToolFacade` and
+ * adds the slice-1 read-only tools (`cfx_read_file`,
+ * `cfx_list_resource_files`, `cfx_inspect_graph`,
+ * `cfx_show_generated_lua`). Every result is JSON-stringified then
+ * passed through `redactSecrets` so the LLM never sees raw license
+ * keys or RCON passwords.
+ */
+export interface IAgentToolRunner {
+	readonly _serviceBrand: undefined;
+
+	/** Tools to advertise to the model — already filtered for the current slice. */
+	getTools(): ReadonlyArray<ProviderTool>;
+
+	/** Dispatch a tool_use call and return the redacted, stringified result. */
+	execute(call: ToolCall): Promise<ToolExecResult>;
+}
+
+export const IAgentToolRunner = createDecorator<IAgentToolRunner>('cfxAgentToolRunner');
