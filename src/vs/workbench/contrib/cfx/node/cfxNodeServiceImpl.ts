@@ -88,6 +88,21 @@ export class CfxNodeService extends Disposable implements ICfxNodeService {
 		}, STOP_GRACE_MS);
 	}
 
+	async getMainProcessId(): Promise<number> {
+		return process.pid;
+	}
+
+	async isProcessAlive(pid: number): Promise<boolean> {
+		if (!Number.isInteger(pid) || pid <= 0) { return false; }
+		try {
+			// Signal 0 is a permission/liveness probe — never delivered.
+			process.kill(pid, 0);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	async extractArchive(args: IExtractArgs): Promise<void> {
 		await mkdir(args.destDir, { recursive: true });
 

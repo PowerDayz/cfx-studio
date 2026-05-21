@@ -24,6 +24,17 @@ import {
 } from '../../_shared/server-cfg/index.js';
 
 /**
+ * `.cfx/` is the IDE-owned per-workspace state dir (see
+ * `EXCLUDED_DIR_NAMES` in `resourceDiscoveryService.ts`). Anything in
+ * there — currently `bridge.cfg` (the ephemeral bridge cfg fragment)
+ * and `bridge.lock` — is never part of the user's server.cfg exec
+ * chain, so it must not trigger this service's onDidChange.
+ */
+function isCfxOwnedCfg(path: string): boolean {
+	return path.includes('/.cfx/');
+}
+
+/**
  * Workbench-side server.cfg orchestrator. Reads cfg files via IFileService,
  * delegates parsing/mutation to @cfx-studio/server-cfg, writes back through
  * IFileService. All mutations are format-preserving except for the slots
@@ -152,8 +163,17 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 		this._watchers.add(this.fileService.onDidFilesChange((e) => {
 			// Conservative: any file change in the workspace might be a
 			// cfg in the exec chain. Fire onDidChange and let consumers
-			// decide whether to recompute.
-			if (e.affects(root) || [...e.rawAdded, ...e.rawUpdated, ...e.rawDeleted].some((u) => u.path.endsWith('.cfg'))) {
+			// decide whether to recompute. Exclude IDE-owned files under
+			// `.cfx/` (notably the session-scoped `.cfx/bridge.cfg`
+			// fragment) — those are never part of the user's exec chain
+			// and firing on them would trigger spurious full re-reads.
+			if (e.affects(root)) {
+				this._onDidChange.fire();
+				return;
+			}
+			const relevant = [...e.rawAdded, ...e.rawUpdated, ...e.rawDeleted]
+				.some((u) => u.path.endsWith('.cfg') && !isCfxOwnedCfg(u.path));
+			if (relevant) {
 				this._onDidChange.fire();
 			}
 		}));
