@@ -13,7 +13,8 @@ import { IFileService } from '../../../../../platform/files/common/files.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { generateLua } from '../../_shared/visual/codegen.js';
-import type { GraphDoc } from '../../_shared/visual/doc.js';
+import { migrateGraphDoc } from '../../_shared/visual/migrate.js';
+import { GraphDiagnosticCollector } from '../../_shared/visual/diagnostics.js';
 
 /**
  * Compile a .fxgraph file to its sibling .lua. Walks up to find the
@@ -49,7 +50,17 @@ class CompileFxGraphAction extends Action2 {
 
 		try {
 			const content = await fileService.readFile(uri);
-			const doc = JSON.parse(content.value.toString()) as GraphDoc;
+			const diags = new GraphDiagnosticCollector();
+			const doc = migrateGraphDoc(JSON.parse(content.value.toString()), diags);
+			if (!doc) {
+				const reasons = diags.all().map((d) => d.message).join('; ');
+				notification.error(localize(
+					'cfx.fxgraph.compileFailed',
+					'Cfx: compile failed: {0}',
+					reasons || 'invalid .fxgraph document',
+				));
+				return;
+			}
 			const result = generateLua(doc, { source: uri.path.split('/').pop() ?? '<fxgraph>' });
 			const errorCount = result.diagnostics.filter((d) => d.severity === 'error').length;
 			if (errorCount > 0) {

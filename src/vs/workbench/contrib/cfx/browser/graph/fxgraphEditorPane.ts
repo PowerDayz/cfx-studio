@@ -305,12 +305,14 @@ export class FxGraphEditorPane extends EditorPane {
 		const doc = this.pendingSaveDoc;
 		const input = this.currentInput;
 		const docVersion = this.docVersion;
-		this.pendingSaveDoc = undefined;
 		if (!uri || doc === undefined) { return true; }
 		try {
 			// Persist the canonical .fxgraph JSON.
 			const json = JSON.stringify(doc, null, 2) + '\n';
 			await this.fileService.writeFile(uri, VSBuffer.fromString(json));
+			// Only clear after the canonical write succeeds — if it threw,
+			// the snapshot stays so the next flush retries.
+			this.pendingSaveDoc = undefined;
 
 			// Regenerate the sibling .lua so the runtime sees the change
 			// without the user manually running cfx.fxgraph.compile. We
