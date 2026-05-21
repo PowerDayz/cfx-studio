@@ -51,6 +51,10 @@ export interface IEphemeralBridgeService {
 	 *     exec chain (it will load itself; do not double-ensure).
 	 *   - The bridge folder contains user edits and Cfx Studio has
 	 *     been told not to manage it for this workspace.
+	 *   - The bridge folder exists with content that differs from the
+	 *     embedded template (hash-mismatch). The bridge is disabled
+	 *     for this session and the user is notified once per workspace;
+	 *     re-enabled automatically once the folder is deleted.
 	 *
 	 * Otherwise returns `['+exec', '.cfx/bridge.cfg']`, where the cfg
 	 * fragment is a single `ensure cfx-studio-bridge` line.
