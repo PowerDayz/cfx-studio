@@ -15,6 +15,8 @@ import {
 	IWorkbenchContributionsRegistry,
 } from '../../../../common/contributions.js';
 import { LifecyclePhase } from '../../../../services/lifecycle/common/lifecycle.js';
+import { IFXServerService } from '../../common/fxserver.js';
+import { IResourceDiscoveryService } from '../../common/resources.js';
 import { findResourceFolder } from '../graph/fxgraphCompiler.js';
 import { cfxIconRestartResource, RestartCurrentResourceAction } from './cfxTitlebarActions.js';
 
@@ -35,6 +37,12 @@ import { cfxIconRestartResource, RestartCurrentResourceAction } from './cfxTitle
  * tabs strip to redraw via `TabDecorations.notifyChanged()`. The cache
  * is invalidated on `fxmanifest.lua` add/delete events so a freshly
  * scaffolded resource picks up its tab buttons without a reload.
+ *
+ * The button only renders when FXServer is `running` AND the resource
+ * itself is `running`. Clicking it while either is down would silently
+ * no-op in `FXServerService.restartResource` — hiding the icon makes
+ * that explicit. Server-state and per-resource-state changes both
+ * trigger a tabs-strip redraw.
  */
 class CfxTabDecorationContribution extends Disposable implements IWorkbenchContribution, ITabDecoration {
 
@@ -49,6 +57,8 @@ class CfxTabDecorationContribution extends Disposable implements IWorkbenchContr
 
 	constructor(
 		@IFileService private readonly fileService: IFileService,
+		@IFXServerService private readonly fxServer: IFXServerService,
+		@IResourceDiscoveryService private readonly discoveryService: IResourceDiscoveryService,
 	) {
 		super();
 
@@ -67,6 +77,13 @@ class CfxTabDecorationContribution extends Disposable implements IWorkbenchContr
 				TabDecorations.notifyChanged();
 			}
 		}));
+
+		// Server lifecycle and per-resource runtime state both gate
+		// visibility (see `decorate`). Either changing means tabs need
+		// to redraw — name resolutions are unaffected, so we keep the
+		// cache intact.
+		this._register(this.fxServer.onDidChangeState(() => TabDecorations.notifyChanged()));
+		this._register(this.discoveryService.onDidChangeResources(() => TabDecorations.notifyChanged()));
 	}
 
 	decorate(resource: URI | undefined): ITabDecorationDescriptor | null {
@@ -80,6 +97,12 @@ class CfxTabDecorationContribution extends Disposable implements IWorkbenchContr
 			return null;
 		}
 		if (cached === '') {
+			return null;
+		}
+		if (this.fxServer.state !== 'running') {
+			return null;
+		}
+		if (this.discoveryService.getResourceByName(cached)?.runtimeState !== 'running') {
 			return null;
 		}
 		return {
