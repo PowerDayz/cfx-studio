@@ -7,7 +7,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { BNode } from '../../../../../_shared/visual/doc.js';
 import type { GraphScope } from '../../../../../_shared/visual/doc.js';
-import { nodeFromNative } from '../../../../../_shared/visual/sig-to-node.js';
 import { vscode } from '../messages';
 
 import {
@@ -21,26 +20,22 @@ import { RAIL_THRESHOLD, bucketByVerb, extractVerb, matchesVerbChip, type VerbBu
 import {
 	buildEventItems,
 	buildLogicItems,
-	buildValuesItems,
 	buildLibraryItems,
+	buildNativeItem,
+	buildValuesItems,
 	labelOf,
-	nativeHintFor,
+	pickAutoResolveItem,
+	rankItem,
+	seedMatches,
 	type CustomEventDecl,
 	type FlowPos,
 	type Item,
 	type NativeHit,
+	type SeedInfo,
 	type VarDecl,
 } from './itemBuilders.js';
 
 interface ScreenPos { x: number; y: number }
-
-interface SeedInfo {
-	direction: 'source' | 'target';
-	kind: 'exec' | 'value';
-	type?: string;
-	nodeId: string;
-	pinId: string;
-}
 
 interface Props {
 	screenPos: ScreenPos;
@@ -54,31 +49,54 @@ interface Props {
 	onCancel: () => void;
 }
 
+/**
+ * The radial has five view-kinds:
+ *   - `outer`         — the top-level 5-wedge category ring
+ *   - `inner-natives` — the 9-wedge native-namespace bucket ring
+ *   - `category`      — leaf list for a non-native category (Events / Logic / Values / Library)
+ *   - `bucket`        — leaf list for one native bucket (host-fetched)
+ *   - `global-search` — leaf list across ALL categories + on-demand native query, ranked
+ *   - `seed-list`     — leaf list filtered to seed-compatible candidates (Blueprint-style pin-drag)
+ *
+ * Only the two ring kinds + one of the three leaf kinds are ever
+ * "active". Item composition for each leaf is derived inside the
+ * render — we don't store items in `view` so they stay reactive to
+ * upstream state (native fetches, query, seed).
+ */
 type View =
 	| { kind: 'outer' }
 	| { kind: 'inner-natives' }
-	| { kind: 'list'; title: string; items: Item[] };
+	| { kind: 'category'; categoryId: Exclude<OuterCategoryId, 'natives'> }
+	| { kind: 'bucket'; bucket: NativeBucket }
+	| { kind: 'global-search' }
+	| { kind: 'seed-list' };
+
+function isLeafView(v: View): boolean {
+	return v.kind === 'category' || v.kind === 'bucket' || v.kind === 'global-search' || v.kind === 'seed-list';
+}
 
 const OUTER_ITEM_SIZE = 80;
 const INNER_ITEM_SIZE = 76;
 
 /**
- * Radial / dial-style quick-add palette. Inspired by
- * dashrobotco/robot-components DialMenu (geometric layout, hover-to-
- * highlight, click-to-select). Adapted for our IDE:
+ * Radial / dial-style quick-add palette — the only node-insert menu in
+ * the .fxgraph editor. Triggered via Space, right-click, or pin-drag
+ * (see App.tsx for the wiring). Inspired by dashrobotco/robot-components
+ * DialMenu (geometric layout, hover-to-highlight, click-to-select).
  *
- *   - Outer ring = 7 top-level categories (Events / Logic / Values /
- *     Stdlib / Built-ins / Commands / Natives).
+ *   - Outer ring = 5 top-level categories (Events / Logic / Values /
+ *     Library / Natives).
  *   - Picking a non-native category opens a centred scrolling list of
  *     items in that category.
- *   - Picking Natives opens an inner ring of 8 namespace buckets; the
+ *   - Picking Natives opens an inner ring of 9 namespace buckets; the
  *     bucket then opens a scrolling list of natives fetched from the
  *     host on demand.
- *   - Any printable key collapses the radial and hands off to the
- *     existing QuickAddMenu (which is fast for known queries).
- *   - When opened from a pin-drag the radial skips straight to the
- *     list view with seed-compatible candidates ranked first — the
- *     drill-down is unnecessary when the candidate set is already narrowed.
+ *   - Typing at the outer ring switches to global-search mode — a flat
+ *     ranked list across every bucket, with native results fetched
+ *     debounced from the host.
+ *   - Opening from a pin-drag skips both rings and lands in seed-list
+ *     mode: a flat list of seed-compatible candidates with the
+ *     canonical auto-resolve answer pinned at the top.
  *
  * No external animation lib; plain CSS transitions on hover are enough.
  * Theming uses VSCode CSS variables (`--vscode-*`) so the menu inherits
@@ -90,59 +108,103 @@ export const RadialMenu: React.FC<Props> = (props) => {
 		onPick, onAddCustomEvent, onCancel,
 	} = props;
 
-	const [view, setView] = useState<View>({ kind: 'outer' });
+	// Initial view: a seed (pin-drag-into-empty-canvas) opens straight
+	// into the filtered seed list — the user knows what they want, so
+	// skipping outer + inner rings saves two clicks. Otherwise we start
+	// at the outer ring as before.
+	const [view, setView] = useState<View>(() => seed ? { kind: 'seed-list' } : { kind: 'outer' });
 	const [focusIndex, setFocusIndex] = useState(0);
-	const [pendingBucket, setPendingBucket] = useState<NativeBucket | null>(null);
-	const [bucketNatives, setBucketNatives] = useState<NativeHit[]>([]);
-	const [bucketLoading, setBucketLoading] = useState(false);
-	// Leaf-panel state. Filter is the inline type-to-search string;
-	// activeVerb is the currently-selected chip (null = "All"). Both
-	// reset only when the user navigates to a DIFFERENT bucket — not
-	// when the in-flight bucket's items reference happens to change.
-	const [filter, setFilter] = useState('');
+	// `query` is the inline type-to-search string. In `category` and
+	// `bucket` views it's a local substring filter. In `global-search`
+	// and `seed-list` it ALSO triggers a debounced native-search
+	// request, since those views need cross-bucket native matches.
+	const [query, setQuery] = useState('');
 	const [activeVerb, setActiveVerb] = useState<string | null>(null);
 	const containerRef = useRef<HTMLDivElement | null>(null);
-	// Monotonic id stamped on every request-native-search so we can
-	// ignore late responses from superseded requests (user opens bucket
-	// A, immediately drills bucket B, A's slow response would otherwise
-	// dump A's items into B's panel — and reset the user's filter).
-	const radialReqIdRef = useRef(0);
 
-	// Subscribe to native-search-result messages for our bucket browse
-	// requests. The QuickAddMenu also listens to the same channel — both
-	// consume the latest result and that's fine here since when the
-	// radial is open the QuickAddMenu isn't.
+	// Two parallel native-search request streams, distinguished by
+	// purpose. Each fetch bumps a shared counter, so an outstanding
+	// bucket request can't be confused with an outstanding global
+	// request when they arrive out of order.
+	const reqCounterRef = useRef(0);
+	const bucketReqIdRef = useRef(0);
+	const globalReqIdRef = useRef(0);
+
+	const [bucketNatives, setBucketNatives] = useState<NativeHit[]>([]);
+	const [bucketLoading, setBucketLoading] = useState(false);
+	const [globalNatives, setGlobalNatives] = useState<NativeHit[]>([]);
+	const [globalLoading, setGlobalLoading] = useState(false);
+
+	// Pending bucket = which native bucket we're awaiting / showing.
+	// Derived from view but stashed separately so the fetch effect can
+	// react to it directly.
+	const pendingBucket = view.kind === 'bucket' ? view.bucket : null;
+
+	// One message handler, two request streams. The requestId stamped
+	// on each request returns on the response, so we always route to
+	// the right state slot — and stale responses (from a request we've
+	// since superseded) match neither and get dropped.
 	useEffect(() => {
 		const handler = (e: MessageEvent) => {
 			const msg = e.data as { type?: string; results?: NativeHit[]; requestId?: number };
 			if (!msg || msg.type !== 'native-search-result' || !Array.isArray(msg.results)) { return; }
-			// Drop responses that don't match the most recent request — a
-			// stale bucket-A reply must not overwrite the user's view of
-			// bucket B. Older hosts (pre-requestId) send no id; we accept
-			// those unconditionally for backwards compatibility.
-			if (msg.requestId !== undefined && msg.requestId !== radialReqIdRef.current) { return; }
-			setBucketNatives(msg.results);
-			setBucketLoading(false);
+			if (msg.requestId === bucketReqIdRef.current) {
+				setBucketNatives(msg.results);
+				setBucketLoading(false);
+				return;
+			}
+			if (msg.requestId === globalReqIdRef.current) {
+				setGlobalNatives(msg.results);
+				setGlobalLoading(false);
+				return;
+			}
+			// Stale or unrelated — ignore.
 		};
 		window.addEventListener('message', handler);
 		return () => window.removeEventListener('message', handler);
 	}, []);
 
-	// When the user drills into a namespace bucket, ask the host for
-	// every native in those namespaces. Empty query + namespaces array
-	// is the "browse" mode in fxgraphEditorPane.handleNativeSearch.
+	// Bucket fetch: when the user picks a bucket, ask the host for
+	// every native in those namespaces. Empty query + namespaces is
+	// the "browse" mode in fxgraphEditorPane.handleNativeSearch.
 	useEffect(() => {
 		if (!pendingBucket) { return; }
-		const id = ++radialReqIdRef.current;
+		bucketReqIdRef.current = ++reqCounterRef.current;
 		setBucketLoading(true);
 		setBucketNatives([]);
 		vscode?.postMessage({
 			type: 'request-native-search',
 			query: '',
 			namespaces: pendingBucket.namespaces,
-			requestId: id,
+			requestId: bucketReqIdRef.current,
 		});
 	}, [pendingBucket]);
+
+	// Global fetch: in `global-search` and `seed-list`, every query
+	// keystroke debounces a fresh request-native-search across all
+	// namespaces, so the user can type any native name without
+	// drilling into a bucket first. Short queries (<2 chars) skip the
+	// fetch — host search isn't useful with one letter and we'd just
+	// thrash the wire.
+	useEffect(() => {
+		if (view.kind !== 'global-search' && view.kind !== 'seed-list') { return; }
+		const q = query.trim();
+		if (q.length < 2) {
+			setGlobalNatives([]);
+			setGlobalLoading(false);
+			return;
+		}
+		const t = window.setTimeout(() => {
+			globalReqIdRef.current = ++reqCounterRef.current;
+			setGlobalLoading(true);
+			vscode?.postMessage({
+				type: 'request-native-search',
+				query: q,
+				requestId: globalReqIdRef.current,
+			});
+		}, 100);
+		return () => window.clearTimeout(t);
+	}, [view.kind, query]);
 
 	// Build the category-specific item lists. Pure derivation from the
 	// inputs; doesn't talk to the host.
@@ -153,31 +215,75 @@ export const RadialMenu: React.FC<Props> = (props) => {
 		library: buildLibraryItems(flowPos),
 	}), [scope, customEvents, variables, flowPos, onAddCustomEvent]);
 
-	// Items for the currently-pending bucket, derived purely from the
-	// fetched natives. Stable across re-renders as long as bucketNatives
-	// keeps its reference — which it does between message events.
-	const bucketItems = useMemo<Item[]>(() => {
-		if (!pendingBucket) { return []; }
-		return bucketNatives.map((n) => ({
-			id: `native:${n.hash}`,
-			label: `${n.ns}.${n.name}`,
-			hint: nativeHintFor(n),
-			build: () => nodeFromNative(n as Parameters<typeof nodeFromNative>[0], flowPos),
-		}));
-	}, [pendingBucket, bucketNatives, flowPos]);
+	const bucketItems = useMemo<Item[]>(
+		() => bucketNatives.map((n) => buildNativeItem(n, flowPos)),
+		[bucketNatives, flowPos],
+	);
 
-	// Install bucket results into the view when the request settles.
-	// Safe to always reset focus/filter/activeVerb here because the
-	// requestId guard above ensures bucketItems only refreshes for the
-	// currently-pending bucket — no spurious refire that would clobber
-	// the user's in-progress filter or chip pick.
-	useEffect(() => {
-		if (!pendingBucket || bucketLoading) { return; }
-		setView({ kind: 'list', title: pendingBucket.label, items: bucketItems });
-		setFocusIndex(0);
-		setFilter('');
-		setActiveVerb(null);
-	}, [pendingBucket, bucketLoading, bucketItems]);
+	const globalNativeItems = useMemo<Item[]>(
+		() => globalNatives.map((n) => buildNativeItem(n, flowPos)),
+		[globalNatives, flowPos],
+	);
+
+	// Combined pool for global-search and seed-list. Categories first
+	// (they're stable and short); natives appended once the host
+	// responds. Ranking handles ordering when a query is active.
+	const globalPool = useMemo<Item[]>(() => {
+		const out: Item[] = [];
+		for (const id of Object.keys(itemsByCategory) as Array<keyof typeof itemsByCategory>) {
+			out.push(...itemsByCategory[id]);
+		}
+		out.push(...globalNativeItems);
+		return out;
+	}, [itemsByCategory, globalNativeItems]);
+
+	// Auto-resolve = the one-click "canonical producer" suggestion
+	// pinned at the top of seed-list when the seed type has an obvious
+	// answer (Player → PlayerId(), Hash → GetHashKey(), …). Returns
+	// null for seeds with no obvious answer; the user just picks from
+	// the seed-compatible list below.
+	const autoResolveItem = useMemo<Item | null>(
+		() => seed ? pickAutoResolveItem(seed, flowPos) : null,
+		[seed, flowPos],
+	);
+
+	// Compute the items the active leaf view should show. Filtering by
+	// query and chip happens inside LeafPanel; here we just pick the
+	// right source pool and pre-rank for search-style views so the most
+	// relevant hits surface first.
+	const { leafItems, leafTitle, leafIsNativeBucket } = useMemo(() => {
+		if (view.kind === 'category') {
+			return {
+				leafItems: itemsByCategory[view.categoryId],
+				leafTitle: labelOf(view.categoryId),
+				leafIsNativeBucket: false,
+			};
+		}
+		if (view.kind === 'bucket') {
+			return {
+				leafItems: bucketItems,
+				leafTitle: view.bucket.label,
+				leafIsNativeBucket: true,
+			};
+		}
+		if (view.kind === 'global-search') {
+			const ranked = rankPool(globalPool, query);
+			return { leafItems: ranked, leafTitle: 'Search', leafIsNativeBucket: false };
+		}
+		if (view.kind === 'seed-list' && seed) {
+			const seedCompatible = globalPool.filter((it) => seedMatches(it, seed));
+			const ranked = rankPool(seedCompatible, query);
+			const withAuto = autoResolveItem ? [autoResolveItem, ...ranked.filter((i) => i.id !== autoResolveItem.id)] : ranked;
+			return {
+				leafItems: withAuto,
+				leafTitle: seedTitle(seed),
+				leafIsNativeBucket: false,
+			};
+		}
+		return { leafItems: [] as Item[], leafTitle: '', leafIsNativeBucket: false };
+	}, [view, itemsByCategory, bucketItems, globalPool, query, seed, autoResolveItem]);
+
+	const leafLoading = view.kind === 'bucket' ? bucketLoading : (view.kind === 'global-search' || view.kind === 'seed-list') ? globalLoading : false;
 
 	const handlePickItem = useCallback((item: Item) => {
 		if (item.deferred === 'custom-event') {
@@ -197,15 +303,17 @@ export const RadialMenu: React.FC<Props> = (props) => {
 			setFocusIndex(0);
 			return;
 		}
-		const items = itemsByCategory[id];
-		setView({ kind: 'list', title: labelOf(id), items });
+		setView({ kind: 'category', categoryId: id });
 		setFocusIndex(0);
-		setFilter('');
+		setQuery('');
 		setActiveVerb(null);
-	}, [itemsByCategory]);
+	}, []);
 
 	const handlePickBucket = useCallback((bucket: NativeBucket) => {
-		setPendingBucket(bucket);
+		setView({ kind: 'bucket', bucket });
+		setFocusIndex(0);
+		setQuery('');
+		setActiveVerb(null);
 	}, []);
 
 	// Global key handling. Capture-phase + stopImmediatePropagation on
@@ -213,29 +321,35 @@ export const RadialMenu: React.FC<Props> = (props) => {
 	// (Escape, Space, etc.) doesn't double-fire. Behavior:
 	//
 	//   - Esc:         close (always — standard "dismiss" semantics).
-	//   - Backspace:   in leaf, pop one char from the inline filter.
-	//                  No view-navigation overload — see LeftArrow.
-	//   - LeftArrow:   pop one view level (leaf → ring → outer → no-op).
-	//   - Up/Down:     in a ring, step focusIndex prev/next (wraps).
-	//   - Right/Enter: in a ring, activate the focused wedge.
-	//   - Tab:         in leaf with chips, cycle the active chip.
-	//   - Printable:   in leaf, append to filter. In rings, ignore — the
-	//                  cross-bucket search path is QuickAddMenu (Space).
+	//   - Backspace:   in any leaf, pop one char from query. If query
+	//                  empties while in `global-search`, fall back to
+	//                  the outer ring (browsing is the natural sibling
+	//                  of search).
+	//   - LeftArrow:   navigate back one level. `bucket` → inner-natives,
+	//                  anything else → outer. `outer` and `seed-list`
+	//                  are roots; LeftArrow there is a no-op (use Esc).
+	//   - Up/Down/Right/Enter: in a ring, focus / activate wedges.
+	//   - Tab:         in any leaf with usable verb chips, cycle the
+	//                  active chip.
+	//   - Printable:   in a leaf, append to query. In `outer` or
+	//                  `inner-natives`, the FIRST printable char
+	//                  switches the view to `global-search` with that
+	//                  char as the seed of the query (covers the
+	//                  cross-bucket "I know the name, just find it" path).
 	const popLevel = useCallback(() => {
-		if (view.kind === 'list' && pendingBucket) {
+		if (view.kind === 'bucket') {
 			setView({ kind: 'inner-natives' });
-			setPendingBucket(null);
-		} else if (view.kind === 'inner-natives' || view.kind === 'list') {
+		} else if (view.kind === 'inner-natives' || view.kind === 'category' || view.kind === 'global-search') {
 			setView({ kind: 'outer' });
-			setPendingBucket(null);
 		} else {
+			// `outer` and `seed-list` have no logical previous.
 			return false;
 		}
 		setFocusIndex(0);
-		setFilter('');
+		setQuery('');
 		setActiveVerb(null);
 		return true;
-	}, [view, pendingBucket]);
+	}, [view]);
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			const consume = () => { e.preventDefault(); e.stopImmediatePropagation(); };
@@ -245,9 +359,17 @@ export const RadialMenu: React.FC<Props> = (props) => {
 				return;
 			}
 			if (e.key === 'Backspace') {
-				if (view.kind !== 'list' || !filter) { return; }
+				if (!isLeafView(view) || !query) { return; }
 				consume();
-				setFilter((f) => f.slice(0, -1));
+				const next = query.slice(0, -1);
+				setQuery(next);
+				// In global-search, an emptied query is a signal that the
+				// user is done searching — pop back to the browse ring.
+				if (!next && view.kind === 'global-search') {
+					setView({ kind: 'outer' });
+					setFocusIndex(0);
+					setActiveVerb(null);
+				}
 				return;
 			}
 			if (e.key === 'ArrowLeft') {
@@ -277,8 +399,8 @@ export const RadialMenu: React.FC<Props> = (props) => {
 					return;
 				}
 			}
-			if (view.kind === 'list' && e.key === 'Tab') {
-				const labels = view.items.map((i) => i.label);
+			if (isLeafView(view) && e.key === 'Tab') {
+				const labels = leafItems.map((i) => i.label);
 				const bucketing = bucketByVerb(labels);
 				if (!bucketing.usable) { return; }
 				consume();
@@ -290,20 +412,33 @@ export const RadialMenu: React.FC<Props> = (props) => {
 				setActiveVerb(order[nextIdx]);
 				return;
 			}
-			if (view.kind === 'list' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
 				const ch = e.key;
-				// Space inside a leaf is reserved for the sibling
-				// QuickAddMenu shortcut; treat it as "no, I don't actually
-				// want to filter on a space" rather than appending.
+				// Space inside the radial is reserved for the editor-wide
+				// shortcut elsewhere; never treat it as a typed character.
 				if (ch === ' ') { return; }
-				consume();
-				setFilter((f) => f + ch);
-				return;
+				if (isLeafView(view)) {
+					consume();
+					setQuery((q) => q + ch);
+					return;
+				}
+				if (view.kind === 'outer' || view.kind === 'inner-natives') {
+					// First printable key at a ring opens cross-bucket
+					// global search seeded with that character. The browse
+					// drill-down is still reachable via the ring; this is
+					// the "I know the name" escape hatch.
+					consume();
+					setView({ kind: 'global-search' });
+					setFocusIndex(0);
+					setActiveVerb(null);
+					setQuery(ch);
+					return;
+				}
 			}
 		};
 		window.addEventListener('keydown', onKey, true);
 		return () => window.removeEventListener('keydown', onKey, true);
-	}, [onCancel, view, pendingBucket, filter, activeVerb, focusIndex, popLevel, handlePickCategory, handlePickBucket]);
+	}, [onCancel, view, query, activeVerb, focusIndex, leafItems, popLevel, handlePickCategory, handlePickBucket]);
 
 	// Move DOM focus into the radial when it opens so keyboard nav
 	// (arrows, Enter, Tab, type-to-filter) actually reaches us instead
@@ -325,7 +460,7 @@ export const RadialMenu: React.FC<Props> = (props) => {
 			if (e.target instanceof Node && root.contains(e.target)) { return; }
 			onCancel();
 		};
-		// Defer one tick so the pointerdown that opened us (Ctrl+Space
+		// Defer one tick so the pointerdown that opened us (Space
 		// triggers no pointer event, but right-click would in future) is
 		// not immediately consumed as an outside-click.
 		const t = window.setTimeout(() => {
@@ -350,7 +485,7 @@ export const RadialMenu: React.FC<Props> = (props) => {
 	// Rings use radius + item half-size; the leaf panel uses its own widest
 	// possible half-dim so corner-of-screen clicks still produce a fully
 	// visible panel without scroll.
-	const centre = view.kind === 'list'
+	const centre = isLeafView(view)
 		? {
 			x: Math.max(310, Math.min(viewport.w - 310, screenPos.x)),
 			y: Math.max(240, Math.min(viewport.h - 240, screenPos.y)),
@@ -393,23 +528,23 @@ export const RadialMenu: React.FC<Props> = (props) => {
 	} else {
 		body = (
 			<LeafPanel
-				title={view.title}
-				items={view.items}
-				loading={bucketLoading}
-				filter={filter}
+				title={leafTitle}
+				items={leafItems}
+				loading={leafLoading}
+				filter={query}
 				activeVerb={activeVerb}
-				isNativeBucket={pendingBucket !== null}
+				isNativeBucket={leafIsNativeBucket}
 				onPick={handlePickItem}
 				onSelectChip={setActiveVerb}
-				onClearFilter={() => setFilter('')}
+				onClearFilter={() => setQuery('')}
 			/>
 		);
 	}
 
 	// Place the hint INSIDE the ring (small badge) when there's space,
-	// or BELOW the ring when the ring is the rendered shape. List view
-	// owns its own header so we skip the hint in that case.
-	const hintBelow = view.kind !== 'list';
+	// or BELOW the ring when the ring is the rendered shape. Leaf views
+	// own their own header so we skip the hint in that case.
+	const hintBelow = !isLeafView(view);
 	const hintOffsetY = hintBelow ? radiusForView + Math.max(OUTER_ITEM_SIZE, INNER_ITEM_SIZE) / 2 + 18 : 0;
 
 	return (
@@ -509,15 +644,15 @@ const Ring: React.FC<{
 
 const HintBelow: React.FC<{ view: View; seed?: SeedInfo; offsetY: number }> = ({ view, seed, offsetY }) => {
 	let label = 'Add node';
-	let hint = '↑↓ focus · Enter open · Esc close';
+	let hint = '↑↓ focus · Enter open · type to search · Esc close';
 	if (view.kind === 'outer') {
 		label = seed ? 'Pin filter active' : 'Pick a category';
 	} else if (view.kind === 'inner-natives') {
 		label = 'Pick a namespace';
-		hint = '↑↓ focus · Enter open · ← back';
-	} else if (view.kind === 'list') {
-		label = view.title;
+		hint = '↑↓ focus · Enter open · type to search · ← back';
 	}
+	// Leaf views (category/bucket/global-search/seed-list) own their
+	// own header inside LeafPanel; this badge is for ring views only.
 	return (
 		<div
 			style={{
@@ -923,3 +1058,26 @@ const LeafRow: React.FC<{ item: Item; onPick: (item: Item) => void }> = ({ item,
 		)}
 	</button>
 );
+
+/**
+ * Score every item in `pool` against `query` and return the top-200
+ * sorted by score descending. With an empty query, the pool is
+ * returned unchanged (already in source order). Items scoring 0 are
+ * dropped so the leaf doesn't pad with irrelevant entries.
+ */
+function rankPool(pool: ReadonlyArray<Item>, query: string): Item[] {
+	if (!query.trim()) { return pool.slice(0, 200); }
+	const scored: { item: Item; score: number }[] = [];
+	for (const item of pool) {
+		const s = rankItem(item, query);
+		if (s > 0) { scored.push({ item, score: s }); }
+	}
+	scored.sort((a, b) => b.score - a.score);
+	return scored.slice(0, 200).map((x) => x.item);
+}
+
+function seedTitle(seed: SeedInfo): string {
+	const direction = seed.direction === 'source' ? 'from' : 'to';
+	const type = seed.type ? `:${seed.type}` : '';
+	return `Pin ${direction} ${seed.kind}${type}`;
+}

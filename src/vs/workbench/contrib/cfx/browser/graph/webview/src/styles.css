@@ -237,103 +237,6 @@ html, body, #cfx-fxgraph-root {
 .react-flow__attribution { display: none !important; }
 .react-flow__panel { color: var(--vscode-foreground, #ddd); }
 
-/* QuickAddMenu uses position: fixed so we can place it in viewport
- * coordinates from clientX/clientY directly — no canvas-relative
- * arithmetic, no surprises after zoom/pan. */
-.quickadd {
-	position: fixed;
-	background: var(--vscode-quickInput-background, #252526);
-	border: 1px solid var(--vscode-panel-border, #3c3c3c);
-	border-radius: 6px;
-	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-	z-index: 1000;
-	width: 480px;
-	max-height: 380px;
-	display: flex;
-	flex-direction: column;
-}
-.quickadd input {
-	background: var(--vscode-input-background, #3c3c3c);
-	color: var(--vscode-input-foreground, #fff);
-	border: none;
-	border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
-	padding: 6px 10px;
-	font-size: 13px;
-}
-.quickadd-body {
-	display: flex;
-	flex: 1;
-	min-height: 0;
-}
-.quickadd-sidebar {
-	display: flex;
-	flex-direction: column;
-	width: 160px;
-	flex: 0 0 auto;
-	border-right: 1px solid var(--vscode-panel-border, #3c3c3c);
-	overflow-y: auto;
-	background: var(--vscode-sideBar-background, transparent);
-}
-.quickadd-section {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 6px;
-	padding: 5px 10px;
-	background: transparent;
-	color: inherit;
-	border: none;
-	cursor: pointer;
-	text-align: left;
-	font-size: 12px;
-	font-family: inherit;
-}
-.quickadd-section:hover { background: var(--vscode-list-hoverBackground, #2a2d2e); }
-.quickadd-section.active {
-	background: var(--vscode-list-activeSelectionBackground, #094771);
-	color: var(--vscode-list-activeSelectionForeground, #fff);
-}
-.quickadd-section-name {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-.quickadd-section-count {
-	font-size: 10.5px;
-	opacity: 0.6;
-	padding: 0 5px;
-}
-.quickadd-list {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-	overflow-y: auto;
-	flex: 1;
-}
-.quickadd-list li {
-	padding: 5px 10px;
-	cursor: pointer;
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-}
-.quickadd-list li:hover,
-.quickadd-list li.selected {
-	background: var(--vscode-list-hoverBackground, #2a2d2e);
-}
-.quickadd-list li .name { font-weight: 500; }
-.quickadd-list li .meta {
-	font-size: 11px;
-	color: var(--vscode-descriptionForeground, #999);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-.quickadd-empty {
-	padding: 10px;
-	color: var(--vscode-descriptionForeground, #999);
-	font-style: italic;
-}
 
 .placeholder {
 	position: absolute;
@@ -358,7 +261,7 @@ html, body, #cfx-fxgraph-root {
 }
 
 /* Floating "Promote to variable" menu — opens at the right-clicked
- * value-output handle. Positioned in viewport coords like .quickadd. */
+ * value-output handle. Positioned in viewport coords (clientX/clientY). */
 .promote-menu {
 	position: fixed;
 	z-index: 1000;

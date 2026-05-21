@@ -34,8 +34,8 @@ import { isAssignable, type EditorType } from '../../../../_shared/visual/types.
 
 import { vscode } from './messages';
 import { NODE_TYPES } from './nodes.js';
-import { QuickAddMenu } from './QuickAddMenu.js';
 import { RadialMenu } from './RadialMenu/RadialMenu.js';
+import type { SeedInfo } from './RadialMenu/itemBuilders.js';
 import './styles.css';
 
 interface FlowNodeData extends Record<string, unknown> {
@@ -69,36 +69,28 @@ export function App() {
 	);
 }
 
-interface QuickAddState {
+interface RadialState {
 	/** Screen-space coords for the menu UI (CSS left/top). */
 	screen: { x: number; y: number };
 	/** Canvas-space coords for the inserted node's `pos`. */
 	flow: { x: number; y: number };
 	/**
 	 * If the menu was opened by dragging from a pin into empty canvas,
-	 * this carries the pin's classification so the menu can pre-filter
-	 * candidates AND auto-wire the freshly-created node.
+	 * this carries the pin's classification so the radial pre-filters
+	 * candidates AND auto-wires the freshly-created node.
 	 */
-	seed?: {
-		direction: 'source' | 'target';
-		kind: 'exec' | 'value';
-		type?: string;
-		nodeId: string;
-		pinId: string;
-	};
+	seed?: SeedInfo;
 }
 
 const HISTORY_LIMIT = 50;
 
 function EditorInner() {
 	const [doc, setDoc] = useState<GraphDoc>(() => emptyGraphDoc());
-	const [quickAdd, setQuickAdd] = useState<QuickAddState | null>(null);
-	// Radial menu is an additive sibling of QuickAddMenu — same data
-	// sources, different presentation. Bound to Ctrl/Cmd+Space so it
-	// doesn't displace the existing Space → QuickAddMenu flow. Shape
-	// mirrors QuickAddState so we can reuse openQuickAddAt for the
-	// type-ahead escape hatch.
-	const [radial, setRadial] = useState<{ screen: { x: number; y: number }; flow: { x: number; y: number }; seed?: QuickAddState['seed'] } | null>(null);
+	// The radial is the only quick-add palette. Triggered three ways:
+	//   - Space (centre on viewport, browse mode at the outer ring)
+	//   - Right-click on the canvas (anchored at cursor, same)
+	//   - Drag from a pin into empty canvas (seed-list mode, auto-wires)
+	const [radial, setRadial] = useState<RadialState | null>(null);
 	const [showHelp, setShowHelp] = useState(false);
 	const [promoteMenu, setPromoteMenu] = useState<{ x: number; y: number; nodeId: string; pinId: string; type: EditorType } | null>(null);
 	const [boxSelect, setBoxSelect] = useState<{ x0: number; y0: number; x: number; y: number } | null>(null);
@@ -118,7 +110,7 @@ function EditorInner() {
 	const pastRef = useRef<GraphDoc[]>([]);
 	const futureRef = useRef<GraphDoc[]>([]);
 	// Tracks which pin a connect-drag started from so onConnectEnd can
-	// turn an empty-canvas drop into a seeded QuickAddMenu open.
+	// turn an empty-canvas drop into a seeded radial open.
 	const connectStartRef = useRef<{ nodeId: string; pinId: string; handleType: 'source' | 'target' } | null>(null);
 	// Comment-group drag: when the user starts dragging a comment, take a
 	// snapshot of every other node whose position falls inside the
@@ -135,11 +127,11 @@ function EditorInner() {
 	// regular right-click never accidentally enters selection mode.
 	const rightDragRef = useRef<{ startX: number; startY: number; downTime: number; dragging: boolean } | null>(null);
 	// Last-known mouse position anywhere in the webview, in viewport
-	// space. Used by Ctrl+Space (which has no pointer event of its own)
-	// to open the radial menu where the user was last looking, not at
-	// viewport centre. Tracked at the window level — if we only watched
-	// the canvas, opening Ctrl+Space while the cursor was over the
-	// toolbar or sidebar would land the menu far from the actual cursor.
+	// space. Used by the Space keybind (which has no pointer event of
+	// its own) to open the radial where the user was last looking,
+	// not at viewport centre. Tracked at the window level — if we only
+	// watched the canvas, opening from the toolbar or sidebar would
+	// land the menu far from the actual cursor.
 	const lastMouseScreenRef = useRef<{ x: number; y: number }>({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 	useEffect(() => {
 		const onMove = (e: MouseEvent) => { lastMouseScreenRef.current = { x: e.clientX, y: e.clientY }; };
@@ -148,7 +140,7 @@ function EditorInner() {
 	}, []);
 	// Element that held DOM focus the instant the radial opened, so we
 	// can restore it when the radial closes (otherwise keyboard focus
-	// is lost on every Ctrl+Space → pick cycle). Reset on close.
+	// is lost on every Space → pick cycle). Reset on close.
 	const radialOpenerFocusRef = useRef<Element | null>(null);
 
 	// Mutate the doc and notify the host. Each mutation also records the
@@ -385,14 +377,7 @@ function EditorInner() {
 		});
 	}, [updateDoc]);
 
-	const openQuickAddAt = useCallback((screenX: number, screenY: number, seed?: QuickAddState['seed']) => {
-		const flow = flowRef.current;
-		if (!flow) return;
-		const flowPos = flow.screenToFlowPosition({ x: screenX, y: screenY });
-		setQuickAdd({ screen: { x: screenX, y: screenY }, flow: flowPos, seed });
-	}, []);
-
-	const openRadialAt = useCallback((screenX: number, screenY: number, seed?: QuickAddState['seed']) => {
+	const openRadialAt = useCallback((screenX: number, screenY: number, seed?: SeedInfo) => {
 		const flow = flowRef.current;
 		if (!flow) return;
 		const flowPos = flow.screenToFlowPosition({ x: screenX, y: screenY });
@@ -488,8 +473,8 @@ function EditorInner() {
 		rightDragRef.current = null;
 		if (wasDragging) return;
 		const me = e as MouseEvent;
-		openQuickAddAt(me.clientX, me.clientY);
-	}, [openQuickAddAt]);
+		openRadialAt(me.clientX, me.clientY);
+	}, [openRadialAt]);
 
 	// Right-mouse-drag → box-select. Tracks the drag in the canvas
 	// wrapper; React-Flow itself doesn't expose a button-2 drag mode,
@@ -530,7 +515,7 @@ function EditorInner() {
 
 	// Delegating contextmenu handler. Right-click on an OUTPUT value
 	// handle opens the promote menu; everything else falls through to
-	// React-Flow's onPaneContextMenu (which opens the QuickAddMenu).
+	// React-Flow's onPaneContextMenu (which opens the radial).
 	const onCanvasContextMenu = useCallback((e: React.MouseEvent) => {
 		const target = e.target as HTMLElement;
 		const handle = target.closest('.react-flow__handle') as HTMLElement | null;
@@ -662,21 +647,15 @@ function EditorInner() {
 			// Ctrl+Z undo, Shift+? help, …) must not fire underneath it.
 			if (radial) return;
 			const meta = e.ctrlKey || e.metaKey;
-			if (meta && e.key === ' ') {
-				// Ctrl/Cmd+Space opens the radial menu (browse-by-category UX).
-				// Plain Space keeps opening the existing QuickAddMenu (search UX),
-				// so both paths stay available and prior muscle memory is intact.
-				// Anchor at the last known mouse position over the webview so
-				// the radial appears under the user's attention, not at the
-				// viewport centre.
+			if (e.key === ' ') {
+				// Space opens the radial at the last known mouse position
+				// over the webview (anchoring at viewport centre would feel
+				// disconnected from the user's gaze). Right-click + pin-drag
+				// also open the radial — Space is the keyboard-only path.
 				e.preventDefault();
 				const { x, y } = lastMouseScreenRef.current;
 				openRadialAt(x, y);
-			} else if (e.key === ' ') {
-				e.preventDefault();
-				openQuickAddAt(window.innerWidth / 2, window.innerHeight / 2);
 			} else if (e.key === 'Escape') {
-				setQuickAdd(null);
 				setPromoteMenu(null);
 				setShowHelp(false);
 				setEventModal(null);
@@ -704,12 +683,12 @@ function EditorInner() {
 		};
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
-	}, [openQuickAddAt, openRadialAt, radial, duplicateSelection, undo, redo]);
+	}, [openRadialAt, radial, duplicateSelection, undo, redo]);
 
-	// Pin-drag → empty canvas opens the QuickAddMenu pre-filtered to
-	// nodes that have a compatible pin on the OPPOSITE side, and wires
-	// the new node automatically when the user picks one. This is the
-	// core Blueprint-style authoring move.
+	// Pin-drag → empty canvas opens the radial in seed-list mode,
+	// pre-filtered to nodes that have a compatible pin on the OPPOSITE
+	// side, and wires the new node automatically when the user picks
+	// one. This is the core Blueprint-style authoring move.
 	const onConnectStart: React.ComponentProps<typeof ReactFlow>['onConnectStart'] = useCallback((_e, params) => {
 		const nodeId = params.nodeId;
 		const pinId = params.handleId;
@@ -725,10 +704,21 @@ function EditorInner() {
 		const start = connectStartRef.current;
 		connectStartRef.current = null;
 		if (!start) return;
-		// React-Flow fires onConnectEnd for valid connections too; suppress
-		// the menu when the drop landed on a real handle.
-		const target = event.target as HTMLElement | null;
-		if (target && target.closest && target.closest('.react-flow__handle')) return;
+		// The seeded radial is the "I dragged into nothing, give me
+		// something to wire to" affordance. Only fire when the drop
+		// landed on the pane *background* — if any node, edge, or pin
+		// handle is an ancestor of the drop target, the user either
+		// wired up an existing element (handle → React-Flow made the
+		// connection) or was aiming at one (node / edge), and a menu
+		// would be in the way. Note: `.react-flow__pane` is the parent
+		// container of everything, so checking `closest('.react-flow__pane')`
+		// is NOT enough — we have to check explicitly for the children
+		// we want to suppress.
+		const target = event.target as Element | null;
+		if (!target) return;
+		if (target.closest('.react-flow__node')) return;
+		if (target.closest('.react-flow__edge')) return;
+		if (target.closest('.react-flow__handle')) return;
 		const fromNode = docRef.current.nodes.find((n) => n.id === start.nodeId);
 		if (!fromNode) return;
 		const dir = start.handleType;
@@ -737,17 +727,17 @@ function EditorInner() {
 		const me = event as MouseEvent;
 		const clientX = (me as { clientX?: number }).clientX ?? window.innerWidth / 2;
 		const clientY = (me as { clientY?: number }).clientY ?? window.innerHeight / 2;
-		openQuickAddAt(clientX, clientY, {
+		openRadialAt(clientX, clientY, {
 			direction: dir,
 			kind: meta.kind,
 			type: meta.type,
 			nodeId: start.nodeId,
 			pinId: start.pinId,
 		});
-	}, [openQuickAddAt]);
+	}, [openRadialAt]);
 
 	const insertNode = useCallback((node: BNode) => {
-		const seed = quickAdd?.seed;
+		const seed = radial?.seed;
 		updateDoc((d) => {
 			let edges2 = d.edges;
 			if (seed) {
@@ -760,8 +750,7 @@ function EditorInner() {
 			}
 			return { ...d, nodes: [...d.nodes, node], edges: edges2 };
 		});
-		setQuickAdd(null);
-	}, [updateDoc, quickAdd]);
+	}, [updateDoc, radial]);
 
 	const counts = useMemo(() => `${doc.nodes.length} nodes · ${doc.edges.length} edges`, [doc]);
 	const missingCount = missingPins.size;
@@ -872,7 +861,7 @@ function EditorInner() {
 					title="Register a /command — opens the command-name + params dialog (also Shift+C)"
 				>+ Command</button>
 				<button onClick={autoArrange} title="Lay out nodes left-to-right by exec flow">Auto-arrange</button>
-				<button onClick={() => openQuickAddAt(window.innerWidth / 2, window.innerHeight / 2)}>+ Add Node (Space)</button>
+				<button onClick={() => openRadialAt(window.innerWidth / 2, window.innerHeight / 2)}>+ Add Node (Space)</button>
 			</div>
 			<div
 				className="canvas"
@@ -907,20 +896,6 @@ function EditorInner() {
 				{nodes.length === 0 && (
 					<div className="placeholder">Press Space or right-click to add a node.</div>
 				)}
-				{quickAdd && (
-					<QuickAddMenu
-						screenPos={quickAdd.screen}
-						flowPos={quickAdd.flow}
-						scope={doc.scope}
-						seed={quickAdd.seed}
-						variables={doc.variables}
-						customEvents={customEventsForDoc(doc)}
-						onAddCustomEvent={(fp) => setEventModal({ flowPos: fp })}
-						onAddCommand={(fp) => setCommandModal({ flowPos: fp })}
-						onPick={insertNode}
-						onCancel={() => setQuickAdd(null)}
-					/>
-				)}
 				{radial && (
 					<RadialMenu
 						screenPos={radial.screen}
@@ -935,9 +910,12 @@ function EditorInner() {
 							// the current React Flow viewport so panning or
 							// zooming the canvas while the radial was open
 							// doesn't drop the node at a stale flow coord.
+							// Order matters: insertNode FIRST (closes over
+							// the current `radial.seed` for auto-wire), then
+							// closeRadial nulls the state for the next open.
 							const freshPos = flowPosForRadial(radial.screen);
-							closeRadial();
 							insertNode({ ...node, pos: freshPos } as typeof node);
+							closeRadial();
 						}}
 						onCancel={closeRadial}
 					/>
@@ -1378,15 +1356,8 @@ function pinColorOf(edge: BEdge, doc: GraphDoc): string {
 }
 
 /**
- * When QuickAddMenu was opened from a pin-drag and the user picks a
- * candidate, build the edge that should connect the seed pin to the
- * matching pin on the new node — otherwise pin-drag-to-canvas would
- * still leave the user to wire manually. Returns null when nothing
- * sensible matches; the new node is inserted unwired in that case.
- */
-/**
  * Walk the doc's nodes for `event` kind with `isCustom: true` and
- * project them into the shape QuickAddMenu uses to build "trigger
+ * project them into the shape the radial uses to build "trigger
  * <name>" candidates — so every custom event gets a one-click
  * trigger node, the same way variables get one-click get/set.
  */
@@ -1406,7 +1377,14 @@ function customEventsForDoc(doc: GraphDoc): { name: string; isNet: boolean; para
 	return out;
 }
 
-function autoWireSeed(seed: NonNullable<QuickAddState['seed']>, node: BNode): BEdge | null {
+/**
+ * When the radial was opened from a pin-drag and the user picks a
+ * candidate, build the edge that should connect the seed pin to the
+ * matching pin on the new node — otherwise pin-drag-to-canvas would
+ * still leave the user to wire manually. Returns null when nothing
+ * sensible matches; the new node is inserted unwired in that case.
+ */
+function autoWireSeed(seed: SeedInfo, node: BNode): BEdge | null {
 	const opposite = seed.direction === 'source' ? 'input' : 'output';
 	// Inspect the new node for a compatible pin on the opposite side.
 	const candidate = firstCompatiblePin(node, opposite, seed.kind, seed.type);
