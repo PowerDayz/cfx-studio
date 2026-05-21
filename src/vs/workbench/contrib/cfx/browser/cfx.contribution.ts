@@ -41,6 +41,11 @@ registerCfxTabDecoration();
 import { registerCfxBridgeInstaller } from './bridge/cfxStudioBridgeInstaller.js';
 registerCfxBridgeInstaller();
 
+// Side-effect import: registers ICfxToolFacade as a singleton. Must load
+// before the MCP bridge (which injects ICfxToolFacade) and before any
+// future built-in agent that consumes the same facade.
+import './tools/cfxToolFacade.js';
+
 import { registerCfxMcpBridge } from './mcpBridge/cfxMcpBridgeContribution.js';
 registerCfxMcpBridge();
 
