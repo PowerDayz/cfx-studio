@@ -996,6 +996,7 @@ function EditorInner() {
 					mode={varModal.mode}
 					defaultName={varModal.defaultName}
 					defaultType={varModal.defaultType}
+					existingNames={(doc.variables ?? []).map((v) => v.name)}
 					onCancel={() => setVarModal(null)}
 					onSubmit={(name, type) => {
 						if (varModal.mode === 'declare') {
@@ -1087,11 +1088,13 @@ interface VariableModalProps {
 	mode: 'declare' | 'promote';
 	defaultName: string;
 	defaultType: EditorType;
+	/** Names of variables already declared in the doc — surfaces a "will replace" hint. */
+	existingNames: readonly string[];
 	onCancel: () => void;
 	onSubmit: (name: string, type: EditorType) => void;
 }
 
-const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaultType, onCancel, onSubmit }) => {
+const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaultType, existingNames, onCancel, onSubmit }) => {
 	const [name, setName] = useState(defaultName);
 	const [type, setType] = useState<EditorType>(defaultType);
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -1099,10 +1102,23 @@ const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaul
 		inputRef.current?.focus();
 		inputRef.current?.select();
 	}, []);
+	const trimmed = name.trim();
+	const validationError = ((): string | null => {
+		if (trimmed.length === 0) {
+			return 'Name is required.';
+		}
+		if (!/^[A-Za-z_][\w]*$/.test(trimmed)) {
+			return 'Must start with a letter or underscore and contain only letters, digits, and underscores.';
+		}
+		return null;
+	})();
+	// Existing-name collision is informational only — the surrounding
+	// updateDoc replaces by name, which is the desired "redefine"
+	// semantics. Surface it so the user knows they're overwriting.
+	const collision = !validationError && existingNames.includes(trimmed);
 	const submit = () => {
-		const safe = name.trim().match(/^[A-Za-z_][\w]*$/);
-		if (!safe) return;
-		onSubmit(name.trim(), type);
+		if (validationError) { return; }
+		onSubmit(trimmed, type);
 	};
 	return (
 		<div className="shortcuts-modal" onClick={onCancel}>
@@ -1116,7 +1132,11 @@ const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaul
 						<input
 							ref={inputRef}
 							className="inline-input"
-							style={{ maxWidth: 'none', padding: '4px 8px' }}
+							style={{
+								maxWidth: 'none',
+								padding: '4px 8px',
+								borderColor: validationError ? 'var(--vscode-inputValidation-errorBorder, #be1100)' : undefined,
+							}}
 							value={name}
 							onChange={(e) => setName(e.target.value)}
 							onKeyDown={(e) => {
@@ -1124,7 +1144,29 @@ const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaul
 								if (e.key === 'Escape') onCancel();
 							}}
 							placeholder="e.g. myCar"
+							aria-invalid={validationError != null}
 						/>
+						{validationError && (
+							<span
+								role="alert"
+								style={{
+									fontSize: 11,
+									color: 'var(--vscode-errorForeground, #f48771)',
+								}}
+							>
+								{validationError}
+							</span>
+						)}
+						{collision && (
+							<span
+								style={{
+									fontSize: 11,
+									color: 'var(--vscode-editorWarning-foreground, #cca700)',
+								}}
+							>
+								A variable named "{trimmed}" already exists — submitting will replace it.
+							</span>
+						)}
 					</label>
 					<label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
 						<span style={{ fontSize: 11, opacity: 0.75 }}>Type</span>
@@ -1144,9 +1186,12 @@ const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaul
 					<button onClick={onCancel}>Cancel</button>
 					<button
 						onClick={submit}
+						disabled={validationError != null}
 						style={{
-							background: 'var(--vscode-button-background, #0e639c)',
-							color: 'var(--vscode-button-foreground, #fff)',
+							background: validationError ? undefined : 'var(--vscode-button-background, #0e639c)',
+							color: validationError ? undefined : 'var(--vscode-button-foreground, #fff)',
+							opacity: validationError ? 0.5 : 1,
+							cursor: validationError ? 'not-allowed' : 'pointer',
 						}}
 					>
 						{mode === 'declare' ? 'Declare' : 'Promote'}
