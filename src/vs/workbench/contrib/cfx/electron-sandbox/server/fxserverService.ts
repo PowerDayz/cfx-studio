@@ -5,6 +5,7 @@
 
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
+import { URI } from '../../../../../base/common/uri.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
@@ -19,6 +20,7 @@ import {
 import { IResourceDiscoveryService } from '../../common/resources.js';
 import { parseLogLine, splitChunk } from '../../common/logParser.js';
 import { ICfxNodeService } from '../../common/cfxNodeService.js';
+import { IEphemeralBridgeService } from '../../common/ephemeralBridge.js';
 
 /**
  * Renderer-side FXServer orchestrator. Delegates the actual
@@ -30,6 +32,13 @@ class FXServerService extends Disposable implements IFXServerService {
 
 	private _state: FXServerState = 'idle';
 	private currentSpawnId: string | undefined;
+	/**
+	 * Captured at `start()` so that `endSession` on exit knows which
+	 * workspace owns the session lock. The workspace folder can in
+	 * principle change between start and exit (multi-root edits) — we
+	 * tear down the session against the folder we started in.
+	 */
+	private currentSessionRoot: URI | undefined;
 	private _stdoutTail = '';
 	private _stderrTail = '';
 
@@ -49,8 +58,19 @@ class FXServerService extends Disposable implements IFXServerService {
 		@IResourceDiscoveryService private readonly discoveryService: IResourceDiscoveryService,
 		@ILogService private readonly logService: ILogService,
 		@ICfxNodeService private readonly cfxNodeService: ICfxNodeService,
+		@IEphemeralBridgeService private readonly ephemeralBridgeService: IEphemeralBridgeService,
 	) {
 		super();
+
+		// Reap stale bridge artefacts left behind by a previous IDE
+		// session that crashed. Fire-and-forget; failures are logged
+		// inside the service.
+		const initialFolder = this.workspaceService.getWorkspace().folders[0];
+		if (initialFolder && initialFolder.uri.scheme === 'file') {
+			void this.ephemeralBridgeService.recoverIfNeeded(initialFolder.uri).catch((err) => {
+				this.logService.warn('[cfx] ephemeral bridge recoverIfNeeded failed', err);
+			});
+		}
 
 		this._register(this.cfxNodeService.onFxServerOutput((e) => {
 			if (e.spawnId !== this.currentSpawnId) { return; }
@@ -60,14 +80,24 @@ class FXServerService extends Disposable implements IFXServerService {
 		this._register(this.cfxNodeService.onFxServerExit((e) => {
 			if (e.spawnId !== this.currentSpawnId) { return; }
 			this.logService.info(`[cfx] FXServer exited code=${e.code} signal=${e.signal}`);
+			const exitedSessionRoot = this.currentSessionRoot;
 			this.currentSpawnId = undefined;
+			this.currentSessionRoot = undefined;
 			if (this._state !== 'errored') {
 				this.transition('idle');
 			}
-			for (const r of this.discoveryService.getResources()) {
+			// Include internal resources so the bridge entry's runtime
+			// state is reset to idle too — keeps state coherent for any
+			// future debug view that opts into `includeInternal`.
+			for (const r of this.discoveryService.getResources({ includeInternal: true })) {
 				if (r.runtimeState !== 'idle') {
 					this.discoveryService.setRuntimeState(r.name, 'idle');
 				}
+			}
+			if (exitedSessionRoot) {
+				void this.ephemeralBridgeService.endSession(exitedSessionRoot).catch((err) => {
+					this.logService.warn('[cfx] ephemeral bridge endSession failed', err);
+				});
 			}
 		}));
 	}
@@ -94,16 +124,38 @@ class FXServerService extends Disposable implements IFXServerService {
 		}
 
 		this.transition('starting');
+		// Prepare the ephemeral bridge before spawn. The lock is keyed
+		// by this IDE's main-process pid, so a crash between
+		// prepareSession and spawnFxServer still leaves a lock that
+		// `recoverIfNeeded` will reap on next launch (the dead pid
+		// can't match).
+		const sessionRoot = folder.uri;
+		let bridgeArgs: readonly string[] = [];
 		try {
-			this.currentSpawnId = await this.cfxNodeService.spawnFxServer({
+			bridgeArgs = await this.ephemeralBridgeService.prepareSession(sessionRoot);
+		} catch (err) {
+			// Bridge is best-effort telemetry; never block FXServer start.
+			this.logService.warn('[cfx] ephemeral bridge prepareSession failed; starting without bridge', err);
+		}
+
+		try {
+			const spawnId = await this.cfxNodeService.spawnFxServer({
 				exePath,
-				cwd: folder.uri.fsPath,
-				args: ['+exec', 'server.cfg'],
+				cwd: sessionRoot.fsPath,
+				args: ['+exec', 'server.cfg', ...bridgeArgs],
 			});
+			this.currentSpawnId = spawnId;
+			this.currentSessionRoot = sessionRoot;
 		} catch (err) {
 			this.logService.error('[cfx] FXServer spawn failed', err);
 			this.transition('errored');
 			this.notificationService.error(`Cfx: FXServer failed to start: ${String(err)}`);
+			// Spawn failed — reap any bridge artefacts we just wrote.
+			if (bridgeArgs.length > 0) {
+				void this.ephemeralBridgeService.endSession(sessionRoot).catch((cleanupErr) => {
+					this.logService.warn('[cfx] ephemeral bridge cleanup after spawn failure failed', cleanupErr);
+				});
+			}
 		}
 	}
 

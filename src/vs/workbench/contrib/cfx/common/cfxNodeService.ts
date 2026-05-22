@@ -69,4 +69,24 @@ export interface ICfxNodeService {
 	 * rejects with an Error on extractor failure.
 	 */
 	extractArchive(args: IExtractArgs): Promise<void>;
+
+	/**
+	 * PID of the Node main process this service runs in — i.e. a stable
+	 * identifier for "the IDE instance currently writing this lock".
+	 * Recorded into the ephemeral bridge's session lock so a later
+	 * launch can probe `isProcessAlive` to decide whether the previous
+	 * IDE crashed (clean up) or is still running (leave alone).
+	 */
+	getMainProcessId(): Promise<number>;
+
+	/**
+	 * Probe whether a PID refers to a live process via `process.kill(pid, 0)`.
+	 * Used by the ephemeral bridge's crash-recovery path.
+	 *
+	 * No process-name check: a recycled PID pointing at an unrelated
+	 * process is a benign failure mode — the lock simply isn't reaped on
+	 * the next launch, and prepareSession() proceeds anyway since the
+	 * bridge folder gets overwritten / refreshed on every session start.
+	 */
+	isProcessAlive(pid: number): Promise<boolean>;
 }
