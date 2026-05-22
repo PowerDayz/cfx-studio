@@ -1040,6 +1040,21 @@ export default tseslint.config(
 					]
 				},
 				{
+					// Cfx Studio vitest unit tests. Must come BEFORE the
+					// generic contrib/*/~ rule below — the rule matcher
+					// picks the first target glob that matches a file
+					// (see .eslint-plugin-local/code-import-patterns.ts).
+					// The `~` placeholder only gets expanded for targets
+					// ending in `/~`, so we use direct globs here. Tests
+					// can import anything within cfx/ (the production
+					// code they cover) plus the vitest API.
+					'target': 'src/vs/workbench/contrib/cfx/**/*.test.ts',
+					'restrictions': [
+						'vs/workbench/contrib/cfx/**/*',
+						'vitest'
+					]
+				},
+				{
 					'target': 'src/vs/workbench/contrib/*/~',
 					'restrictions': [
 						'vs/base/~',
