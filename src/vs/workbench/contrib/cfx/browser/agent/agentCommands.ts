@@ -9,26 +9,28 @@ import { ServicesAccessor } from '../../../../../platform/instantiation/common/i
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
 import { ISecretStorageService } from '../../../../../platform/secrets/common/secrets.js';
-import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { IAgentService } from '../../common/agent.js';
 import { ANTHROPIC_API_KEY_SECRET } from './anthropicProvider.js';
-import { CFX_AGENT_CONTAINER_ID } from './agentViewContainer.js';
 
-class OpenCfxAgentAction extends Action2 {
-	static readonly ID = 'cfx.agent.open';
-	constructor() {
-		super({
-			id: OpenCfxAgentAction.ID,
-			title: localize2('cfx.agent.open', 'Cfx: Open Agent Panel'),
-			category: localize2('cfx.category', 'Cfx Studio'),
-			f1: true,
-		});
-	}
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const viewsService = accessor.get(IViewsService);
-		await viewsService.openViewContainer(CFX_AGENT_CONTAINER_ID, true);
-	}
-}
+// Agent panel UI deferred to PR #14 (vscode.lm-based provider picker).
+// import { IViewsService } from '../../../../services/views/common/viewsService.js';
+// import { CFX_AGENT_CONTAINER_ID } from './agentViewContainer.js';
+//
+// class OpenCfxAgentAction extends Action2 {
+// 	static readonly ID = 'cfx.agent.open';
+// 	constructor() {
+// 		super({
+// 			id: OpenCfxAgentAction.ID,
+// 			title: localize2('cfx.agent.open', 'Cfx: Open Agent Panel'),
+// 			category: localize2('cfx.category', 'Cfx Studio'),
+// 			f1: true,
+// 		});
+// 	}
+// 	async run(accessor: ServicesAccessor): Promise<void> {
+// 		const viewsService = accessor.get(IViewsService);
+// 		await viewsService.openViewContainer(CFX_AGENT_CONTAINER_ID, true);
+// 	}
+// }
 
 class SetCfxAgentApiKeyAction extends Action2 {
 	static readonly ID = 'cfx.agent.setApiKey';
@@ -89,7 +91,8 @@ class ClearCfxAgentConversationAction extends Action2 {
 }
 
 export function registerAgentCommands(): void {
-	registerAction2(OpenCfxAgentAction);
+	// Agent panel UI deferred to PR #14 (vscode.lm-based provider picker).
+	// registerAction2(OpenCfxAgentAction);
 	registerAction2(SetCfxAgentApiKeyAction);
 	registerAction2(ClearCfxAgentConversationAction);
 }

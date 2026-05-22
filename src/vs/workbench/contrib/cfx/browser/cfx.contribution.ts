@@ -56,7 +56,8 @@ import './agent/secretRegistry.js';
 import './agent/anthropicProvider.js';
 import './agent/agentToolRunner.js';
 import './agent/agentService.js';
-import './agent/agentViewContainer.js';
+// Agent panel UI deferred to PR #14 (vscode.lm-based provider picker).
+// import './agent/agentViewContainer.js';
 
 import { registerAgentCommands } from './agent/agentCommands.js';
 registerAgentCommands();
