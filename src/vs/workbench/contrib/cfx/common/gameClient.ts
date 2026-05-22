@@ -5,42 +5,28 @@
 
 import { Event } from '../../../../base/common/event.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import { GameClientKind } from './cfxNodeService.js';
 
 /**
- * Game-client (FiveM.exe / RedM.exe) lifecycle. Deliberately decoupled
- * from the FXServer lifecycle: stopping FXServer does NOT kill the
- * client, and an IDE crash does NOT take the client down (the process
- * is spawned detached + unref'd by the Node side).
+ * Game-client (FiveM.exe / RedM.exe) running-status, sourced by polling
+ * `tasklist`. We do NOT spawn the game from the IDE — every Node-spawn
+ * shape we tried (direct, cmd /c, URL handler via cmd, PowerShell
+ * Start-Process) was rejected by ROSLauncher's ancestor-chain check.
+ * The user launches the game the normal way; the IDE just observes.
  *
- *   idle --Launch--> launching --spawn ok--> running
- *                                              |
- *                                              +--Kill / window-closed / crash--> idle
- *
- *   spawn fail: launching --> idle (with notification)
+ *   idle    — process not detected in tasklist
+ *   running — FiveM.exe / RedM.exe is up (the kind we poll is decided
+ *             by the workspace's game mode)
  */
-export type GameClientState = 'idle' | 'launching' | 'running';
+export type GameClientState = 'idle' | 'running';
 
 export interface IGameClientService {
 	readonly _serviceBrand: undefined;
 
 	readonly state: GameClientState;
 
-	/**
-	 * Spawn the configured game client (FiveM.exe or RedM.exe per
-	 * workspace game mode) with `+connect <host>:<port>` resolved from
-	 * `cfx.gameClient.*` settings and `server.cfg`'s `endpoint_add_tcp`.
-	 *
-	 * If the configured exe path is empty or missing on disk, pops a
-	 * file picker; the picked path is persisted to settings.
-	 */
-	launch(): Promise<void>;
-
-	/**
-	 * Terminate the spawned game client. No-op when state is `idle`.
-	 * Explicit user action only — never called as a side-effect of
-	 * FXServer stop / restart.
-	 */
-	kill(): Promise<void>;
+	/** Which game we're polling for (FiveM vs RedM), per workspace game mode. */
+	readonly kind: GameClientKind;
 
 	readonly onDidChangeState: Event<GameClientState>;
 }

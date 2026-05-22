@@ -18,61 +18,54 @@ import {
 	IStatusbarService,
 	StatusbarAlignment,
 } from '../../../../services/statusbar/browser/statusbar.js';
-import { GameClientKind } from '../../common/cfxNodeService.js';
-import { GameClientState, IGameClientService } from '../../common/gameClient.js';
+import { BridgeState, IEphemeralBridgeService } from '../../common/ephemeralBridge.js';
 
-const ENTRY_GAMECLIENT_ID = 'cfx.statusBar.gameClient';
+const ENTRY_BRIDGE_ID = 'cfx.statusBar.bridge';
 
 /**
- * Right-aligned status-bar chip that announces a running game client.
- * The IDE only observes (tasklist polling) — it never spawns the game
- * itself. Label flips between "FiveM running" and "RedM running" per
- * the workspace's game mode.
+ * Right-aligned status-bar chip indicating whether the session-scoped
+ * client-error bridge is materialised for the current FXServer session.
  *
- *   running: `$(circle-large-filled) FiveM running`
- *   idle:    entry hidden
+ *   active: `$(circle-large-filled) Bridge active`
+ *   idle:   entry hidden (legacy installed bridge, user-owned folder,
+ *           hash-mismatch opt-out, or FXServer not running)
  */
-class GameClientStatusBarContribution extends Disposable implements IWorkbenchContribution {
+class BridgeStatusBarContribution extends Disposable implements IWorkbenchContribution {
 	private entry?: IStatusbarEntryAccessor;
 
 	constructor(
 		@IStatusbarService private readonly statusbarService: IStatusbarService,
-		@IGameClientService private readonly gameClient: IGameClientService,
+		@IEphemeralBridgeService private readonly bridge: IEphemeralBridgeService,
 	) {
 		super();
-		this.sync(this.gameClient.state);
-		this._register(this.gameClient.onDidChangeState((s) => this.sync(s)));
+		this.sync(this.bridge.state);
+		this._register(this.bridge.onDidChangeState((s) => this.sync(s)));
 	}
 
-	private sync(state: GameClientState): void {
+	private sync(state: BridgeState): void {
 		if (state === 'idle') {
 			this.entry?.dispose();
 			this.entry = undefined;
 			return;
 		}
-		const props = this.entryFor(this.gameClient.kind);
+		const props = this.entryFor();
 		if (this.entry) {
 			this.entry.update(props);
 		} else {
 			this.entry = this.statusbarService.addEntry(
 				props,
-				ENTRY_GAMECLIENT_ID,
+				ENTRY_BRIDGE_ID,
 				StatusbarAlignment.RIGHT,
-				102,
+				103,
 			);
 		}
 	}
 
-	private entryFor(kind: GameClientKind): IStatusbarEntry {
-		const displayName = kind === 'redm' ? 'RedM' : 'FiveM';
-		const label = localize('cfx.statusBar.gameClient.running', '{0} running', displayName);
-		const tooltip = localize(
-			'cfx.statusBar.gameClient.tooltip',
-			'{0}.exe detected via tasklist. The IDE does not own this process; close the game window normally to clear.',
-			displayName,
-		);
+	private entryFor(): IStatusbarEntry {
+		const label = localize('cfx.statusBar.bridge.active', 'Bridge active');
+		const tooltip = localize('cfx.statusBar.bridge.tooltip', 'Cfx session-scoped client-error bridge — forwards unhandled Lua client errors to the FXServer console as [client:<resource>] lines.');
 		return {
-			name: localize('cfx.statusBar.gameClient.name', 'Cfx Game Client'),
+			name: localize('cfx.statusBar.bridge.name', 'Cfx Bridge'),
 			text: `$(circle-large-filled) ${label}`,
 			tooltip,
 			ariaLabel: label,
@@ -81,9 +74,9 @@ class GameClientStatusBarContribution extends Disposable implements IWorkbenchCo
 	}
 }
 
-export function registerGameClientStatusBar(): void {
+export function registerBridgeStatusBar(): void {
 	Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench).registerWorkbenchContribution(
-		GameClientStatusBarContribution,
+		BridgeStatusBarContribution,
 		LifecyclePhase.Restored,
 	);
 }

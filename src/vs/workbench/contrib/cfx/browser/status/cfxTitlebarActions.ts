@@ -37,13 +37,11 @@ import {
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { LifecyclePhase } from '../../../../services/lifecycle/common/lifecycle.js';
 import { IFXServerService, FXServerState } from '../../common/fxserver.js';
-import { GameClientState, IGameClientService } from '../../common/gameClient.js';
 import { findResourceFolder } from '../graph/fxgraphCompiler.js';
 import { resolveFxServerPath } from '../server/firstRunPrompt.js';
 import {
 	CFX_ACTIVE_RESOURCE_KEY,
 	CFX_FXSERVER_STATE_KEY,
-	CFX_GAMECLIENT_STATE_KEY,
 } from './cfxContextKeys.js';
 
 /**
@@ -52,12 +50,11 @@ import {
  *   $(play, green)        cfx.fxserver.start          – state ∈ {idle, errored}
  *   $(debug-stop, red)    cfx.fxserver.stop           – state ∈ {running, starting}
  *   $(refresh, amber)     cfx.fxserver.restart        – state == running
- *   $(rocket, blue)       cfx.gameClient.launch       – FXServer running, game-client idle
- *   $(circle-slash, red)  cfx.gameClient.kill         – game-client running
  *   $(debug-restart)      cfx.resource.restartCurrent – active editor inside a Cfx resource
  *
- * Visibility is driven by two ContextKeys: the FXServer state and the
- * game-client state. Both keys are owned by the contribution below.
+ * Visibility is driven by the FXServer ContextKey owned by the contribution
+ * below. (The game-client and bridge surface live in the status bar — they
+ * are pure observers, no actions to attach to the title bar.)
  *
  * The "restart current resource" action resolves the active editor's URI
  * to the nearest enclosing `fxmanifest.lua` folder (re-using the helper
@@ -85,16 +82,6 @@ export const cfxIconRestartResource = registerIcon(
 	Codicon.debugRestart,
 	localize('cfx.icon.restartResource', 'Cfx Studio – restart the current resource.'),
 );
-const cfxIconLaunchGame = registerIcon(
-	'cfx-gameclient-launch',
-	Codicon.rocket,
-	localize('cfx.icon.launchGame', 'Cfx Studio – launch the game client and connect to the local FXServer.'),
-);
-const cfxIconKillGame = registerIcon(
-	'cfx-gameclient-kill',
-	Codicon.circleSlash,
-	localize('cfx.icon.killGame', 'Cfx Studio – terminate the running game client.'),
-);
 
 const cfxIconStartFg = registerColor(
 	'cfx.fxserverIcon.startForeground',
@@ -111,16 +98,6 @@ const cfxIconRestartFg = registerColor(
 	{ dark: '#E0B045', light: '#8a6500', hcDark: '#E0B045', hcLight: '#8a6500' },
 	localize('cfx.color.restart', 'Title-bar icon colour for the Restart FXServer action.'),
 );
-const cfxIconLaunchGameFg = registerColor(
-	'cfx.gameClientIcon.launchForeground',
-	{ dark: '#75BEFF', light: '#0B5FA8', hcDark: '#75BEFF', hcLight: '#0B5FA8' },
-	localize('cfx.color.launchGame', 'Title-bar icon colour for the Launch Game action.'),
-);
-const cfxIconKillGameFg = registerColor(
-	'cfx.gameClientIcon.killForeground',
-	{ dark: '#F48771', light: '#A1260D', hcDark: '#F48771', hcLight: '#A1260D' },
-	localize('cfx.color.killGame', 'Title-bar icon colour for the Kill Game action.'),
-);
 
 registerThemingParticipant((theme, collector) => {
 	const start = theme.getColor(cfxIconStartFg);
@@ -134,14 +111,6 @@ registerThemingParticipant((theme, collector) => {
 	const restart = theme.getColor(cfxIconRestartFg);
 	if (restart) {
 		collector.addRule(`.monaco-workbench ${ThemeIcon.asCSSSelector(cfxIconRestart)} { color: ${restart}; }`);
-	}
-	const launchGame = theme.getColor(cfxIconLaunchGameFg);
-	if (launchGame) {
-		collector.addRule(`.monaco-workbench ${ThemeIcon.asCSSSelector(cfxIconLaunchGame)} { color: ${launchGame}; }`);
-	}
-	const killGame = theme.getColor(cfxIconKillGameFg);
-	if (killGame) {
-		collector.addRule(`.monaco-workbench ${ThemeIcon.asCSSSelector(cfxIconKillGame)} { color: ${killGame}; }`);
 	}
 });
 
@@ -196,38 +165,6 @@ class RestartFxServerAction extends Action2 {
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
 		await accessor.get(IFXServerService).restart();
-	}
-}
-
-class LaunchGameClientAction extends Action2 {
-	static readonly ID = 'cfx.gameClient.launch';
-	constructor() {
-		super({
-			id: LaunchGameClientAction.ID,
-			title: localize2('cfx.gameClient.launch', 'Cfx: Launch Game'),
-			category: localize2('cfx.category', 'Cfx Studio'),
-			icon: cfxIconLaunchGame,
-			f1: true,
-		});
-	}
-	async run(accessor: ServicesAccessor): Promise<void> {
-		await accessor.get(IGameClientService).launch();
-	}
-}
-
-class KillGameClientAction extends Action2 {
-	static readonly ID = 'cfx.gameClient.kill';
-	constructor() {
-		super({
-			id: KillGameClientAction.ID,
-			title: localize2('cfx.gameClient.kill', 'Cfx: Kill Game'),
-			category: localize2('cfx.category', 'Cfx Studio'),
-			icon: cfxIconKillGame,
-			f1: true,
-		});
-	}
-	async run(accessor: ServicesAccessor): Promise<void> {
-		await accessor.get(IGameClientService).kill();
 	}
 }
 
@@ -297,7 +234,6 @@ export class RestartCurrentResourceAction extends Action2 {
  */
 class CfxTitlebarStateContribution extends Disposable implements IWorkbenchContribution {
 	private readonly serverState: IContextKey<FXServerState>;
-	private readonly gameClientState: IContextKey<GameClientState>;
 	private readonly activeResource: IContextKey<string>;
 	private generation = 0;
 
@@ -306,18 +242,13 @@ class CfxTitlebarStateContribution extends Disposable implements IWorkbenchContr
 		@IEditorService private readonly editorService: IEditorService,
 		@IFileService private readonly fileService: IFileService,
 		@IFXServerService private readonly fxServer: IFXServerService,
-		@IGameClientService private readonly gameClient: IGameClientService,
 	) {
 		super();
 		this.serverState = CFX_FXSERVER_STATE_KEY.bindTo(contextKeyService);
-		this.gameClientState = CFX_GAMECLIENT_STATE_KEY.bindTo(contextKeyService);
 		this.activeResource = CFX_ACTIVE_RESOURCE_KEY.bindTo(contextKeyService);
 
 		this.serverState.set(this.fxServer.state);
 		this._register(this.fxServer.onDidChangeState((s) => this.serverState.set(s)));
-
-		this.gameClientState.set(this.gameClient.state);
-		this._register(this.gameClient.onDidChangeState((s) => this.gameClientState.set(s)));
 
 		this._register(this.editorService.onDidActiveEditorChange(() => this.updateActiveResource()));
 		this.updateActiveResource();
@@ -353,22 +284,11 @@ const SERVER_IDLE_OR_ERRORED = ContextKeyExpr.or(
 	ContextKeyExpr.equals(CFX_FXSERVER_STATE_KEY.key, 'idle'),
 	ContextKeyExpr.equals(CFX_FXSERVER_STATE_KEY.key, 'errored'),
 );
-// Launch is offered only while FXServer is up AND no client is running
-// yet, so the user can't double-launch from the button. Kill is offered
-// whenever the client is running; spawn-time state shows the same kill
-// affordance so the user can cancel a launch they regret.
-const GAMECLIENT_IDLE = ContextKeyExpr.equals(CFX_GAMECLIENT_STATE_KEY.key, 'idle');
-const GAMECLIENT_LIVE = ContextKeyExpr.or(
-	ContextKeyExpr.equals(CFX_GAMECLIENT_STATE_KEY.key, 'launching'),
-	ContextKeyExpr.equals(CFX_GAMECLIENT_STATE_KEY.key, 'running'),
-);
 
 export function registerCfxTitlebarActions(): void {
 	registerAction2(StartFxServerAction);
 	registerAction2(StopFxServerAction);
 	registerAction2(RestartFxServerAction);
-	registerAction2(LaunchGameClientAction);
-	registerAction2(KillGameClientAction);
 	registerAction2(RestartCurrentResourceAction);
 
 	// FXServer Start / Stop / Restart live in the editor pane's right
@@ -406,32 +326,6 @@ export function registerCfxTitlebarActions(): void {
 			icon: cfxIconRestart,
 		},
 		when: SERVER_RUNNING,
-	});
-
-	// Launch / Kill Game live in the same navigation group, ordered
-	// after the FXServer cluster so they appear immediately to the
-	// right of Restart. The two are mutually exclusive by their `when`
-	// clauses (idle vs live), so only one slot is occupied at a time.
-	MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
-		group: 'navigation',
-		order: 4,
-		command: {
-			id: LaunchGameClientAction.ID,
-			title: localize('cfx.gameClient.launch.short', 'Launch Game'),
-			icon: cfxIconLaunchGame,
-		},
-		when: ContextKeyExpr.and(SERVER_RUNNING, GAMECLIENT_IDLE),
-	});
-
-	MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
-		group: 'navigation',
-		order: 4,
-		command: {
-			id: KillGameClientAction.ID,
-			title: localize('cfx.gameClient.kill.short', 'Kill Game'),
-			icon: cfxIconKillGame,
-		},
-		when: GAMECLIENT_LIVE,
 	});
 
 	// Restart-current-resource is rendered as a per-tab action

@@ -3,26 +3,26 @@
  *  Licensed under the MIT License.
  *--------------------------------------------------------------------------------------------*/
 
-import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { GameClientService } from './gameClientService.js';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+
+// `gameClientService.ts` imports `mainWindow` from `base/browser/window.js`,
+// which dereferences the DOM `window` global at module-init time and crashes
+// under vitest's node env. Stub the module before importing the SUT.
+vi.mock('../../../../../base/browser/window.js', () => ({
+	mainWindow: {
+		setInterval: (..._args: unknown[]) => 0,
+		clearInterval: (..._args: unknown[]) => { /* noop */ },
+	},
+}));
+
+const { GameClientService } = await import('./gameClientService.js');
 
 /**
- * Tests the renderer-side game-client state machine and the auto-launch
- * latch. The class delegates the actual `child_process.spawn` to the
- * Node side via `ICfxNodeService`, so we mock every DI dep and assert
- * on the spawn-call shape.
- *
- * The latch contract (see class doc) is "fire at most once per FXServer
- * session": one launch when the server transitions to 'running', no
- * second launch on re-entrant 'running' events, latch resets when the
- * server leaves 'running' so the next session re-arms.
+ * Tests the renderer-side polling status service. The service does not
+ * launch the game — it only polls `isGameClientRunning` and emits state
+ * changes for the status-bar chip to consume.
  */
 
-// ---- minimal in-test event emitter ----
-// We can't import `Emitter` from vs/base/common/event.js: tests are
-// restricted to vs/workbench/contrib/cfx/** + vitest by the lint rule.
-// A trivial fire-and-forget emitter is enough for the state-machine
-// scenarios here.
 class MiniEmitter<T> {
 	private listeners: Array<(e: T) => void> = [];
 	readonly event = (listener: (e: T) => void) => {
@@ -36,326 +36,157 @@ class MiniEmitter<T> {
 
 interface TestHarness {
 	service: GameClientService;
-	spawnGameClient: Mock;
-	killGameClient: Mock;
 	isGameClientRunning: Mock;
-	resolveDefaultGameClientPath: Mock;
-	fxServerStateEmitter: MiniEmitter<'idle' | 'starting' | 'running' | 'stopping' | 'errored'>;
-	gameClientExitEmitter: MiniEmitter<{ spawnId: string; code: number | null; signal: string | null; errorMessage?: string }>;
-	notifyError: Mock;
-	notifyInfo: Mock;
-	configValues: Map<string, unknown>;
+	gameModeEmitter: MiniEmitter<unknown>;
+	setWorkspaceMode: (mode: 'fivem' | 'redm') => void;
 }
 
 interface HarnessOptions {
-	autoLaunch?: boolean;
-	configured?: string; // exe path returned by resolveGameClientPath
-	host?: string;
-	port?: number;
-	extraArgs?: string[];
-	isAlreadyRunning?: boolean;
-	spawnImpl?: (args: { kind: 'fivem' | 'redm'; exePath: string; host: string; port: number; extraArgs: ReadonlyArray<string> }) => Promise<string>;
+	initialMode?: 'fivem' | 'redm';
+	initialRunning?: boolean;
 }
 
 function makeHarness(opts: HarnessOptions = {}): TestHarness {
-	const configValues = new Map<string, unknown>([
-		['cfx.gameClient.autoLaunch', opts.autoLaunch ?? false],
-		['cfx.gameClient.fivemPath', opts.configured ?? 'C:\\fake\\FiveM.exe'],
-		['cfx.gameClient.host', opts.host ?? '127.0.0.1'],
-		['cfx.gameClient.port', opts.port ?? 30120],
-		['cfx.gameClient.extraArgs', opts.extraArgs ?? []],
-	]);
+	let mode: 'fivem' | 'redm' = opts.initialMode ?? 'fivem';
 
-	const configurationService = {
-		getValue: (key: string) => configValues.get(key),
-		updateValue: vi.fn(async () => undefined),
-	};
+	const logService = { trace: vi.fn(), debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
-	const notifyError = vi.fn();
-	const notifyInfo = vi.fn();
-	const notificationService = {
-		error: notifyError,
-		info: notifyInfo,
-		warn: vi.fn(),
-		notify: vi.fn(),
-		prompt: vi.fn(),
-		status: vi.fn(),
-	};
-
-	const logService = {
-		trace: vi.fn(), debug: vi.fn(), info: vi.fn(),
-		warn: vi.fn(), error: vi.fn(),
-	};
-
-	// resolveGameClientPath consults the InstantiationService via
-	// invokeFunction. We satisfy the "settings have a path + the file
-	// exists" branch (call 1: configured path; call 2: file exists)
-	// with a single fake accessor whose returned service quacks like
-	// both IConfigurationService and IFileService — that way we don't
-	// need to dispatch on the requested service id (we'd have to import
-	// the createDecorator instances from vs/platform, which the test
-	// import-pattern rule forbids).
-	const fakeAccService = {
-		getValue: (key: string) => configValues.get(key),
-		updateValue: async () => undefined,
-		exists: async () => true,
-	};
-	const instantiationService = {
-		invokeFunction: vi.fn(<R,>(fn: (acc: { get: (id: unknown) => unknown }) => R): R =>
-			fn({ get: () => fakeAccService } as { get: (id: unknown) => unknown })
-		),
-	};
-
-	const spawnGameClient = vi.fn(opts.spawnImpl ?? (async () => 'spawn-id-1'));
-	const killGameClient = vi.fn(async () => undefined);
-	const isGameClientRunning = vi.fn(async () => opts.isAlreadyRunning ?? false);
-	const resolveDefaultGameClientPath = vi.fn(async () => undefined);
-	const gameClientExitEmitter = new MiniEmitter<{ spawnId: string; code: number | null; signal: string | null; errorMessage?: string }>();
+	const isGameClientRunning = vi.fn(async () => opts.initialRunning ?? false);
 	const cfxNodeService = {
-		spawnGameClient,
-		killGameClient,
 		isGameClientRunning,
-		resolveDefaultGameClientPath,
-		onGameClientExit: gameClientExitEmitter.event,
-		// Unused-by-this-test FXServer surface — present to satisfy the type.
+		// Unused-by-this-test surface, present to satisfy the type.
 		spawnFxServer: vi.fn(),
 		writeFxServerStdin: vi.fn(),
 		killFxServer: vi.fn(),
 		onFxServerOutput: new MiniEmitter().event,
 		onFxServerExit: new MiniEmitter().event,
 		extractArchive: vi.fn(),
+		getMainProcessId: vi.fn(async () => 0),
+		isProcessAlive: vi.fn(async () => false),
 	};
 
-	const fxServerStateEmitter = new MiniEmitter<'idle' | 'starting' | 'running' | 'stopping' | 'errored'>();
-	const fxServer = {
-		state: 'idle' as const,
-		start: vi.fn(), stop: vi.fn(),
-		restart: vi.fn(), restartResource: vi.fn(),
-		onDidChangeState: fxServerStateEmitter.event,
-		onDidChangeResourceState: new MiniEmitter().event,
-		onStdout: new MiniEmitter().event,
-	};
-
+	const gameModeEmitter = new MiniEmitter<unknown>();
 	const gameMode = {
-		getWorkspaceMode: () => 'fivem' as unknown as never,
+		// `GameMode.RedM` ends up imported as a string-y enum in the
+		// production code; we mirror its discriminator (`'redm'` vs anything
+		// else maps to FiveM via the production code's ternary).
+		getWorkspaceMode: () => (mode === 'redm' ? 'redm' : 'fivem') as never,
 		getResourceMode: vi.fn(),
-		onDidChangeMode: new MiniEmitter().event,
+		onDidChangeMode: gameModeEmitter.event,
 	};
 
-	const serverCfg = {
-		getRootCfgUri: vi.fn(),
-		getEnsuredResourceNames: vi.fn(async () => new Set<string>()),
-		getEnsureChainOrdered: vi.fn(async () => []),
-		addEnsure: vi.fn(), removeEnsure: vi.fn(),
-		reorderEnsures: vi.fn(), renameEnsure: vi.fn(),
-		getEndpointPort: vi.fn(async () => 30120),
-		onDidChange: new MiniEmitter().event,
-	};
-
-	// Constructor decorators only mark which service-id to inject under
-	// real DI; positional construction in tests works fine.
 	const service = new GameClientService(
-		configurationService as never,
-		notificationService as never,
 		logService as never,
-		instantiationService as never,
 		cfxNodeService as never,
-		fxServer as never,
 		gameMode as never,
-		serverCfg as never,
 	);
 
 	return {
 		service,
-		spawnGameClient,
-		killGameClient,
 		isGameClientRunning,
-		resolveDefaultGameClientPath,
-		fxServerStateEmitter,
-		gameClientExitEmitter,
-		notifyError,
-		notifyInfo,
-		configValues,
+		gameModeEmitter,
+		setWorkspaceMode: (m) => { mode = m; },
 	};
 }
 
-/** Flush microtasks: the auto-launch fire-and-forgets a `void launch()`. */
+// Wait for setImmediate-scheduled microtasks (the constructor fires a
+// fire-and-forget initial poll). Adequate for our state-transition checks.
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-describe('GameClientService auto-launch latch', () => {
+describe('GameClientService kind resolution', () => {
 	let harness: TestHarness;
+	afterEach(() => { harness?.service.dispose(); });
 
-	afterEach(() => {
-		harness?.service.dispose();
+	it('reports fivem for the default FiveM workspace', () => {
+		harness = makeHarness({ initialMode: 'fivem' });
+		expect(harness.service.kind).toBe('fivem');
 	});
 
-	it('spawns once when fxServer first transitions to running', async () => {
-		harness = makeHarness({ autoLaunch: true });
-		harness.fxServerStateEmitter.fire('running');
+	it('reports redm for a RedM workspace', () => {
+		harness = makeHarness({ initialMode: 'redm' });
+		expect(harness.service.kind).toBe('redm');
+	});
+
+	it('re-resolves and re-polls when the workspace game mode changes', async () => {
+		harness = makeHarness({ initialMode: 'fivem' });
+		await flush();
+		harness.isGameClientRunning.mockClear();
+
+		harness.setWorkspaceMode('redm');
+		harness.gameModeEmitter.fire(undefined);
 		await flush();
 
-		expect(harness.spawnGameClient).toHaveBeenCalledTimes(1);
+		expect(harness.service.kind).toBe('redm');
+		expect(harness.isGameClientRunning).toHaveBeenCalledWith('redm');
+	});
+});
+
+describe('GameClientService polling', () => {
+	let harness: TestHarness;
+	afterEach(() => { harness?.service.dispose(); });
+
+	it('polls immediately on construction and reports idle when tasklist returns false', async () => {
+		harness = makeHarness({ initialRunning: false });
+		await flush();
+		expect(harness.isGameClientRunning).toHaveBeenCalledTimes(1);
+		expect(harness.service.state).toBe('idle');
+	});
+
+	it('flips to running when tasklist sees the exe', async () => {
+		harness = makeHarness({ initialRunning: true });
+		await flush();
 		expect(harness.service.state).toBe('running');
 	});
 
-	it('re-arms the latch after fxServer leaves and re-enters running', async () => {
-		harness = makeHarness({ autoLaunch: true });
-
-		harness.fxServerStateEmitter.fire('running');
-		await flush();
-		expect(harness.spawnGameClient).toHaveBeenCalledTimes(1);
-
-		// Simulate the user closing the game window so the service
-		// returns to 'idle'; otherwise the second launch() short-circuits
-		// at the `state !== 'idle'` guard regardless of the latch.
-		harness.gameClientExitEmitter.fire({ spawnId: 'spawn-id-1', code: 0, signal: null });
-		await flush();
-		expect(harness.service.state).toBe('idle');
-
-		harness.fxServerStateEmitter.fire('stopping');
-		harness.fxServerStateEmitter.fire('running');
+	it('emits onDidChangeState only when the state actually changes', async () => {
+		harness = makeHarness({ initialRunning: true });
 		await flush();
 
-		expect(harness.spawnGameClient).toHaveBeenCalledTimes(2);
+		const seen: string[] = [];
+		harness.service.onDidChangeState((s) => seen.push(s));
+
+		// idempotent re-poll while still running: no event.
+		harness.isGameClientRunning.mockResolvedValueOnce(true);
+		await (harness.service as unknown as { pollOnce(): Promise<void> }).pollOnce();
+		expect(seen).toEqual([]);
+
+		// flip to idle: one event.
+		harness.isGameClientRunning.mockResolvedValueOnce(false);
+		await (harness.service as unknown as { pollOnce(): Promise<void> }).pollOnce();
+		expect(seen).toEqual(['idle']);
 	});
 
-	it('does not spawn a second time on a re-entrant running event within one session', async () => {
-		harness = makeHarness({ autoLaunch: true });
-
-		harness.fxServerStateEmitter.fire('running');
+	it('treats tasklist errors as idle (does not throw, keeps service alive)', async () => {
+		harness = makeHarness({ initialRunning: true });
 		await flush();
-		// Server emits 'running' again without any intervening non-running
-		// state — shouldn't trigger another spawn.
-		harness.fxServerStateEmitter.fire('running');
-		await flush();
+		expect(harness.service.state).toBe('running');
 
-		expect(harness.spawnGameClient).toHaveBeenCalledTimes(1);
-	});
-
-	it('does not auto-launch when the setting is disabled', async () => {
-		harness = makeHarness({ autoLaunch: false });
-		harness.fxServerStateEmitter.fire('running');
-		await flush();
-
-		expect(harness.spawnGameClient).not.toHaveBeenCalled();
+		harness.isGameClientRunning.mockRejectedValueOnce(new Error('tasklist crashed'));
+		await (harness.service as unknown as { pollOnce(): Promise<void> }).pollOnce();
 		expect(harness.service.state).toBe('idle');
 	});
 });
 
-describe('GameClientService.launch() spawn payload', () => {
+describe('GameClientService poll re-entrancy guard', () => {
 	let harness: TestHarness;
+	beforeEach(() => { harness = makeHarness(); });
 	afterEach(() => { harness?.service.dispose(); });
 
-	it('hands the Node side the structured payload (kind/exePath/host/port/extraArgs), not a pre-baked args array', async () => {
-		harness = makeHarness({
-			host: '1.2.3.4',
-			port: 30121,
-			extraArgs: ['+set', 'sv_lan', '1'],
-		});
-
-		await harness.service.launch();
-
-		expect(harness.spawnGameClient).toHaveBeenCalledTimes(1);
-		const payload = harness.spawnGameClient.mock.calls[0][0];
-		expect(payload).toMatchObject({
-			kind: 'fivem',
-			host: '1.2.3.4',
-			port: 30121,
-			extraArgs: ['+set', 'sv_lan', '1'],
-		});
-		expect(typeof payload.exePath).toBe('string');
-		// Belt-and-braces: the old `args: ['+connect', …]` field is gone.
-		// Without this assertion, a regression that quietly puts the
-		// connect string back into `args` would survive the toMatchObject
-		// check above.
-		expect(payload).not.toHaveProperty('args');
-	});
-});
-
-describe('GameClientService.launch() guards', () => {
-	let harness: TestHarness;
-	afterEach(() => { harness?.service.dispose(); });
-
-	it('refuses to spawn when isGameClientRunning reports true, and stays idle with an info notification', async () => {
-		harness = makeHarness({ isAlreadyRunning: true });
-
-		await harness.service.launch();
-
-		expect(harness.spawnGameClient).not.toHaveBeenCalled();
-		expect(harness.notifyInfo).toHaveBeenCalledTimes(1);
-		expect(harness.service.state).toBe('idle');
-	});
-
-	it('is a no-op when called while state is already running', async () => {
-		harness = makeHarness();
-
-		await harness.service.launch();
-		expect(harness.service.state).toBe('running');
-		expect(harness.spawnGameClient).toHaveBeenCalledTimes(1);
-
-		await harness.service.launch();
-		expect(harness.spawnGameClient).toHaveBeenCalledTimes(1);
-	});
-
-	it('returns state to idle and fires an error notification when spawn throws', async () => {
-		harness = makeHarness({
-			spawnImpl: async () => { throw new Error('ENOENT'); },
-		});
-
-		await harness.service.launch();
-
-		expect(harness.spawnGameClient).toHaveBeenCalledTimes(1);
-		expect(harness.service.state).toBe('idle');
-		expect(harness.notifyError).toHaveBeenCalledTimes(1);
-	});
-});
-
-describe('GameClientService onGameClientExit dispatch', () => {
-	let harness: TestHarness;
-	afterEach(() => { harness?.service.dispose(); });
-
-	it('ignores GameClientExit events whose spawnId does not match the current spawn', async () => {
-		harness = makeHarness();
-
-		await harness.service.launch();
-		expect(harness.service.state).toBe('running');
-
-		// A stale spawn id (e.g. from a previously-killed spawn whose
-		// exit arrived late) must not flip the state of the new spawn.
-		harness.gameClientExitEmitter.fire({ spawnId: 'some-other-id', code: 0, signal: null });
+	it('skips a second pollOnce while the first is still in flight', async () => {
+		// Drain the constructor's initial poll so the mock counter and
+		// inFlight latch are both clean before we exercise re-entrancy.
 		await flush();
+		harness.isGameClientRunning.mockClear();
 
-		expect(harness.service.state).toBe('running');
-		expect(harness.notifyError).not.toHaveBeenCalled();
-	});
+		let resolve!: (v: boolean) => void;
+		harness.isGameClientRunning.mockImplementationOnce(() => new Promise<boolean>((r) => { resolve = r; }));
 
-	it('flips state to idle when the matching spawn exits cleanly', async () => {
-		harness = makeHarness();
+		const first = (harness.service as unknown as { pollOnce(): Promise<void> }).pollOnce();
+		// Second call enters and immediately bails on the inFlight guard.
+		await (harness.service as unknown as { pollOnce(): Promise<void> }).pollOnce();
+		expect(harness.isGameClientRunning).toHaveBeenCalledTimes(1);
 
-		await harness.service.launch();
-		// `mock.results[0].value` is the unresolved Promise for an async
-		// `vi.fn`; await it to get the spawnId the service actually stored.
-		const currentId = (await harness.spawnGameClient.mock.results[0].value) as string;
-
-		harness.gameClientExitEmitter.fire({ spawnId: currentId, code: 0, signal: null });
-		await flush();
-
-		expect(harness.service.state).toBe('idle');
-	});
-
-	it('surfaces an error notification when the matching exit carries an errorMessage', async () => {
-		harness = makeHarness();
-
-		await harness.service.launch();
-		const currentId = (await harness.spawnGameClient.mock.results[0].value) as string;
-
-		harness.gameClientExitEmitter.fire({
-			spawnId: currentId, code: null, signal: null,
-			errorMessage: 'EACCES',
-		});
-		await flush();
-
-		expect(harness.service.state).toBe('idle');
-		expect(harness.notifyError).toHaveBeenCalledTimes(1);
+		resolve(false);
+		await first;
 	});
 });
