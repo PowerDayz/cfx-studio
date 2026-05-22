@@ -35,7 +35,7 @@ const FALLBACK_PORT = 30120;
  * once when the server comes up and never again until the server is
  * stopped and restarted.
  */
-class GameClientService extends Disposable implements IGameClientService {
+export class GameClientService extends Disposable implements IGameClientService {
 	declare readonly _serviceBrand: undefined;
 
 	private _state: GameClientState = 'idle';

@@ -240,8 +240,11 @@ class ServerCfgService extends Disposable implements IServerCfgService {
  * Extract the port from an `endpoint_add_tcp` address token. Accepted
  * forms: `0.0.0.0:30120`, `127.0.0.1:30120`, `[::]:30120`. Returns
  * `undefined` for malformed input or out-of-range ports.
+ *
+ * Exported for unit testing (see `serverCfgServiceImpl.test.ts`); the
+ * only production caller is `getEndpointPort` above.
  */
-function extractPort(address: string): number | undefined {
+export function extractPort(address: string): number | undefined {
 	// IPv6 bracketed form: [::]:30120
 	const v6 = address.match(/^\[[^\]]+\]:(\d+)$/);
 	if (v6) {
