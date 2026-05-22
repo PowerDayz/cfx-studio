@@ -190,15 +190,9 @@ describe('AgentService.runLoop', () => {
 		const errorEvt = events.find((e) => e.kind === 'error');
 		expect(errorEvt).toBeDefined();
 		expect((errorEvt as Extract<AgentEvent, { kind: 'error' }>).message).toMatch(/8 iterations/);
-		// NOTE: the `runLoop` sets state='errored' on the bound abort, but
-		// `send()`'s success path then overwrites it back to 'idle'
-		// (agentService.ts:96 unconditionally sets idle after runLoop
-		// returns without throwing). The observable error contract is the
-		// error event, not the terminal state. Worth surfacing to the
-		// service owner: arguably the runaway-guard branch should throw
-		// instead of falling through, so the catch sets errored and the
-		// state stays consistent with the emitted event.
-		expect(svc.state).toBe('idle');
+		// runLoop throws on bound abort so send()'s catch path is the
+		// single error settlement — state and event agree.
+		expect(svc.state).toBe('errored');
 	});
 
 	it('rejects a concurrent send() while the agent is busy', async () => {

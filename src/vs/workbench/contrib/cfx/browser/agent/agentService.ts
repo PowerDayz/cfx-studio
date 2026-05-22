@@ -155,11 +155,12 @@ export class AgentService extends Disposable implements IAgentService {
 			// Loop back: feed tool_results into the next provider call.
 		}
 
-		this._onDidEvent.fire({
-			kind: 'error',
-			message: 'Agent loop exceeded 8 iterations; aborting to prevent runaway tool usage.',
-		});
-		this.setState('errored');
+		// Throw rather than emitting the error event inline: send()'s
+		// catch is the single error path that emits the event and sets
+		// state='errored'. Emitting here would either double-fire the
+		// event or — if we returned — leave state at 'errored' only until
+		// send()'s success path overwrites it back to 'idle'.
+		throw new Error('Agent loop exceeded 8 iterations; aborting to prevent runaway tool usage.');
 	}
 
 	private runTurn(
