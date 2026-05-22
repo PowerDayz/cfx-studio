@@ -8,7 +8,8 @@ import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react';
 
 import type { BNode, PinDef } from '../../../../_shared/visual/doc.js';
 import type { EditorType } from '../../../../_shared/visual/types.js';
-import { type GraphDiagnostic, GraphDiagnosticSeverity } from '../../../../_shared/visual/diagnostics.js';
+import { type GraphDiagnostic } from '../../../../_shared/visual/diagnostics.js';
+import { diagOverlay as computeDiagOverlay } from './diagOverlay.js';
 import { InlineValueEditor } from './InlineEditor.js';
 
 /**
@@ -51,22 +52,13 @@ interface FlowData extends Record<string, unknown> {
 }
 
 /**
- * Computes overlay attributes from the analyzer diagnostics for one
- * node. Returns the highest-severity class suffix and a newline-
- * separated tooltip; both are spread onto the outer `.bnode` div in
- * every node-type component.
+ * Local thin wrapper around the pure `diagOverlay` helper. Pulls the
+ * `nodeDiagnostics` field off `FlowData` and forwards to the helper
+ * so the per-node-type components can call `diagOverlay(data)` without
+ * each spelling out `data.nodeDiagnostics`.
  */
 function diagOverlay(data: FlowData): { className: string; title: string | undefined } {
-	const diags = data.nodeDiagnostics;
-	if (!diags || diags.length === 0) {
-		return { className: '', title: undefined };
-	}
-	const sev =
-		diags.some((d) => d.severity === GraphDiagnosticSeverity.Error) ? 'error' :
-		diags.some((d) => d.severity === GraphDiagnosticSeverity.Warning) ? 'warning' :
-		'info';
-	const title = diags.map((d) => `[${d.severity}] ${d.message}`).join('\n\n');
-	return { className: `diag-${sev}`, title };
+	return computeDiagOverlay(data.nodeDiagnostics);
 }
 
 function bnodeClass(kind: string, overlay: { className: string }): string {

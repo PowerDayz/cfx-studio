@@ -61,7 +61,7 @@ export function runRules(ctx: AnalysisContext): GraphDiagnostic[] {
  * (one client passing another's entity id). The graceful fix is to
  * convert via `NetworkGetNetworkIdFromEntity` before the trigger.
  */
-function ruleEntityOnNetTrigger(ctx: AnalysisContext): GraphDiagnostic[] {
+export function ruleEntityOnNetTrigger(ctx: AnalysisContext): GraphDiagnostic[] {
 	const out: GraphDiagnostic[] = [];
 	for (const node of ctx.doc.nodes) {
 		if (!isCrossContextSend(node)) { continue; }
@@ -98,7 +98,7 @@ function ruleEntityOnNetTrigger(ctx: AnalysisContext): GraphDiagnostic[] {
  * the item. ValidateBNode (Slice 2) will clear this diagnostic when
  * placed on the path.
  */
-function ruleUntrustedToCrossContextSend(ctx: AnalysisContext): GraphDiagnostic[] {
+export function ruleUntrustedToCrossContextSend(ctx: AnalysisContext): GraphDiagnostic[] {
 	if (ctx.untrustedPins.size === 0) { return []; }
 	const out: GraphDiagnostic[] = [];
 	const seen = new Set<string>(); // dedupe by (nodeId|pinId)
@@ -137,7 +137,7 @@ function ruleUntrustedToCrossContextSend(ctx: AnalysisContext): GraphDiagnostic[
  * isn't needed. The diagnostic exists to make the omission visible,
  * not to block.
  */
-function ruleNetHandlerNoSourceCheck(ctx: AnalysisContext): GraphDiagnostic[] {
+export function ruleNetHandlerNoSourceCheck(ctx: AnalysisContext): GraphDiagnostic[] {
 	if (ctx.doc.scope !== 'server') { return []; }
 	const out: GraphDiagnostic[] = [];
 
