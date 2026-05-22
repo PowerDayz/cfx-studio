@@ -35,19 +35,21 @@ import {
 	helperPrelude,
 } from './runtime-helpers.js';
 import type { EditorType } from './types.js';
-
-export interface GraphError {
-	nodeId?: string;
-	message: string;
-}
+import { GraphDiagnosticCollector, type GraphDiagnostic } from './diagnostics.js';
 
 export interface CodegenOptions {
 	/** Used in the AUTO-GENERATED banner; e.g. `myresource/main.fxgraph`. */
 	source?: string;
+	/**
+	 * Optional pre-existing collector to append into. Lets a caller
+	 * fold migration + codegen diagnostics into a single pass that the
+	 * UI receives as one batch. When omitted, codegen creates its own.
+	 */
+	diagnostics?: GraphDiagnosticCollector;
 }
 
-export function generateLua(doc: GraphDoc, opts: CodegenOptions = {}): { source: string; errors: GraphError[] } {
-	const errors: GraphError[] = [];
+export function generateLua(doc: GraphDoc, opts: CodegenOptions = {}): { source: string; diagnostics: readonly GraphDiagnostic[] } {
+	const diags = opts.diagnostics ?? new GraphDiagnosticCollector();
 	const nodesById = new Map<string, BNode>();
 	for (const n of doc.nodes) { nodesById.set(n.id, n); }
 
@@ -109,6 +111,18 @@ export function generateLua(doc: GraphDoc, opts: CodegenOptions = {}): { source:
 
 	function calleeLua(node: BNode): string {
 		if (node.kind === 'pure' || node.kind === 'exec-call') {
+			// Trigger-event exec-calls don't emit their callee as an
+			// identifier — `callExpr` rewrites them to
+			// `TriggerEvent('<triggerEventName>', …)` where the event
+			// name is a string literal. The internal callee value
+			// (e.g. `trigger:gang-test:spawnVehicle`) is never written
+			// out, so don't run it through safeIdent — that would
+			// produce a spurious `codegen:invalid-ident` diagnostic
+			// for the hyphen/colon characters that FiveM event names
+			// canonically contain. The sentinel is unused.
+			if (node.kind === 'exec-call' && node.triggerEventName) {
+				return '';
+			}
 			if (node.callee === 'invoke_native') {
 				// Prefer the catalog-PascalCase form (the form the FiveM
 				// Lua runtime actually exposes). The hash-fallback path
@@ -141,7 +155,7 @@ export function generateLua(doc: GraphDoc, opts: CodegenOptions = {}): { source:
 			return literalLua(pin.type, pin.defaultValue);
 		}
 		if (cycleStack.includes(src.node.id)) {
-			errors.push({ nodeId: src.node.id, message: 'cycle in value graph' });
+			diags.error('codegen:value-cycle', 'cycle in value graph', 'codegen', { nodeId: src.node.id });
 			return 'nil';
 		}
 		cycleStack.push(src.node.id);
@@ -291,14 +305,16 @@ export function generateLua(doc: GraphDoc, opts: CodegenOptions = {}): { source:
 		return Number.isInteger(n) ? `${n}.0` : String(n);
 	}
 
-	function safeIdent(s: string): string {
-		return /^[a-zA-Z_][\w]*$/.test(s) ? s : '_invalid_';
+	function safeIdent(s: string, ctx?: { nodeId?: string; pinId?: string }): string {
+		if (/^[a-zA-Z_][\w]*$/.test(s)) { return s; }
+		diags.error('codegen:invalid-ident', `"${s}" is not a valid Lua identifier`, 'codegen', ctx);
+		return '_invalid_';
 	}
 
 	function emitChain(starts: BNode[], level: number, out: string[], visited: Set<string>): void {
 		for (const node of starts) {
 			if (visited.has(node.id)) {
-				errors.push({ nodeId: node.id, message: 'exec cycle' });
+				diags.error('codegen:exec-cycle', 'exec cycle', 'codegen', { nodeId: node.id });
 				continue;
 			}
 			visited.add(node.id);
@@ -565,9 +581,9 @@ export function generateLua(doc: GraphDoc, opts: CodegenOptions = {}): { source:
 
 	out.push(...body);
 
-	return { source: out.join('\n'), errors };
+	return { source: out.join('\n'), diagnostics: diags.all() };
 }
 
-export function validate(doc: GraphDoc): GraphError[] {
-	return generateLua(doc).errors;
+export function validate(doc: GraphDoc): readonly GraphDiagnostic[] {
+	return generateLua(doc).diagnostics;
 }

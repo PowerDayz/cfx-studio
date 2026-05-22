@@ -4,11 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { GameMode } from './gameMode.js';
+import type { GraphDiagnostic } from '../_shared/visual/diagnostics.js';
 
 /**
  * Host ↔ webview message protocol for the .fxgraph visual editor.
  * The host is the renderer-side EditorPane (browser/graph/fxgraphEditorPane.ts).
- * The webview is the React-Flow app built by ide/build/build-fxgraph-webview.mjs
+ * The webview is the React-Flow app built by cfx-scripts/build-fxgraph-webview.mjs
  * and loaded into a Webview overlay.
  *
  * Both sides share these types via TypeScript only — at runtime each
@@ -17,7 +18,7 @@ import type { GameMode } from './gameMode.js';
 
 /** Sent host → webview. */
 export type HostToWebviewMessage =
-	| { type: 'init'; doc: unknown; gameMode: GameMode; resourceFunctions?: ReadonlyArray<{ name: string; params: ReadonlyArray<{ name: string; type: string }> }> }
+	| { type: 'init'; docVersion: number; doc: unknown; gameMode: GameMode }
 	| { type: 'apply-patch'; patch: unknown }
 	| {
 		type: 'native-search-result';
@@ -36,7 +37,20 @@ export type HostToWebviewMessage =
 			results: string;
 		}>;
 	}
-	| { type: 'function-table-update'; functions: ReadonlyArray<{ name: string; params: ReadonlyArray<{ name: string; type: string }> }> };
+	/**
+	 * Codegen + migration diagnostics for the currently-loaded document.
+	 * Posted after every successful save (even when empty, so the
+	 * banner clears on a clean run). The webview discards diagnostics
+	 * whose `docVersion` is less than the most recently seen `init` to
+	 * avoid stale results painting a freshly-switched-to doc.
+	 */
+	| { type: 'diagnostics'; docVersion: number; diagnostics: ReadonlyArray<GraphDiagnostic> }
+	/**
+	 * Generated Lua source for the currently-loaded document. Posted
+	 * after every successful codegen so the in-graph preview overlay
+	 * stays in sync. Same `docVersion` race-guard as `diagnostics`.
+	 */
+	| { type: 'lua-preview'; docVersion: number; source: string };
 
 /** Sent webview → host. */
 export type WebviewToHostMessage =
