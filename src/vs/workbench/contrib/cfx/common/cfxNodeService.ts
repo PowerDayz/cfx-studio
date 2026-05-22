@@ -103,22 +103,21 @@ export interface ICfxNodeService {
 	 * opaque spawnId used as the key on the exit event and for
 	 * killGameClient.
 	 *
-	 * FiveM is launched via the `fivem://connect/<host>:<port>` URL
-	 * handler (registered by the FiveM installer). RedM has no such
-	 * scheme — `rdr3://` / `redm://` were proposed and closed as
-	 * not-planned upstream — so it is launched via a PowerShell
-	 * `Start-Process` wrapper. Both paths go through processes that
-	 * ROSLauncher's parent-process whitelist accepts (the Windows shell
-	 * for URL handlers, powershell.exe for the PowerShell wrapper); a
-	 * direct `child_process.spawn` from Node, or an intermediary cmd.exe,
-	 * is rejected with "This application should be launched directly from
-	 * the shell or a web browser."
+	 * Both games launch via `powershell.exe -Command "Start-Process ..."`.
+	 * Start-Process invokes ShellExecuteEx, which reparents the spawned
+	 * exe under explorer.exe — and explorer.exe is on ROSLauncher's
+	 * accepted-ancestor list. Direct `child_process.spawn`, `cmd.exe /c`,
+	 * and even `cmd /c start "<fivem://url>"` are all rejected with
+	 * "This application should be launched directly from the shell or a
+	 * web browser." ROS walks the full ancestor chain, so any cmd.exe
+	 * or Node anywhere in the tree poisons the check; PowerShell's
+	 * Start-Process is the only spawn shape we've found that satisfies it.
 	 *
-	 * Because the URL-handler path hands off to the Windows shell, the
-	 * spawned wrapper exits immediately and is NOT a parent of the
-	 * eventual game process. Lifecycle ("user closed the game window")
-	 * is therefore tracked by polling `tasklist` for FiveM.exe / RedM.exe
-	 * rather than by listening to a child-process exit event.
+	 * The powershell.exe wrapper exits as soon as Start-Process hands off,
+	 * so the actual game process has no Node parent. Lifecycle ("user
+	 * closed the game window") is therefore tracked by polling `tasklist`
+	 * for FiveM.exe / RedM.exe rather than by listening to a child-process
+	 * exit event.
 	 */
 	spawnGameClient(args: IGameClientSpawnArgs): Promise<string>;
 

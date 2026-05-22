@@ -126,75 +126,59 @@ export class CfxNodeService extends Disposable implements ICfxNodeService {
 		const spawnId = generateUuid();
 		const target = `${args.host}:${args.port}`;
 
-		// FiveM's ROSLauncher rejects launches whose process ancestry
+		// FiveM/RedM's ROSLauncher rejects launches whose process ancestry
 		// isn't a recognised shell or web browser — "This application
 		// should be launched directly from the shell or a web browser."
-		// Both a direct `spawn(FiveM.exe)` AND a `cmd.exe /c FiveM.exe`
-		// wrapper are rejected (verified by repeat-crash on the PR-#7
-		// branch). The two ancestries ROS does accept:
+		// ROS walks the FULL ancestor chain, not just the immediate parent.
+		// Rejected ancestries (all verified by repeat-crash):
+		//   - direct `spawn(FiveM.exe)` from Node
+		//   - `cmd.exe /c FiveM.exe`
+		//   - `cmd.exe /c start "" "fivem://connect/..."` (URL handler) —
+		//     gets past ros:legit auth but fails at ros:launcher because
+		//     cmd.exe is still visible higher in the tree
 		//
-		//   1. The Windows shell (Explorer / ShellExecute), which is how
-		//      browsers and the start menu launch URL handlers. We get
-		//      this for FiveM by launching its registered `fivem://`
-		//      URL handler — Windows routes it through ShellExecute.
-		//   2. powershell.exe, which is on ROS's whitelist. We use this
-		//      for RedM, because RedM has no working URL scheme: the
-		//      `rdr3://` / `redm://` feature request was closed as
-		//      not-planned upstream (citizenfx/fivem#2065, cfx.re forum
-		//      thread 915033). PowerShell's `Start-Process` reparents
-		//      the spawned exe under explorer.exe, satisfying ROS.
+		// What works: `powershell.exe -Command "Start-Process ..."`.
+		// Start-Process invokes ShellExecuteEx, which reparents the spawned
+		// exe under explorer.exe. When ROS walks up from the game process,
+		// it sees explorer.exe (an accepted shell) and stops there — the
+		// powershell.exe call site is no longer in the visible chain.
 		//
-		// FiveM `extraArgs` (host-side overrides like `+set sv_lan 1`)
-		// can't be expressed through the URL scheme, so we just pass the
-		// `+connect host:port` form via the URL. If users need extra
-		// args on FiveM in future, we'll have to switch FiveM to the
-		// PowerShell path too. RedM keeps full extra-arg support.
+		// We use the same Start-Process recipe for both games:
+		//   - FiveM: Start-Process FiveM.exe +connect host:port
+		//   - RedM:  Start-Process RedM.exe  +connect host:port
+		// RedM has no working URL scheme anyway (rdr3:// / redm:// were
+		// proposed and closed as not-planned upstream — citizenfx/fivem#2065,
+		// cfx.re forum thread 915033), so Start-Process is also the only
+		// option there.
 		//
-		// `detached: true` + `stdio: 'ignore'` + `unref()`: the wrapper
-		// process exits as soon as it hands off (sub-second for both
-		// paths); we don't want its stdio pipes outliving it. The actual
-		// game process has no Node parent — see the watcher below for
-		// lifecycle tracking.
+		// `detached: true` + `stdio: 'ignore'` + `unref()`: the powershell
+		// wrapper exits within sub-second after Start-Process hands off;
+		// we don't want its stdio pipes outliving it. The actual game
+		// process has no Node parent — see the watcher below for lifecycle
+		// tracking via tasklist polling.
 		try {
-			if (args.kind === 'fivem') {
-				// `start "" "<url>"` is the canonical way to invoke a URL
-				// handler from cmd; the empty `""` is the (unused) window
-				// title arg that `start` requires when its first arg is
-				// quoted. cmd.exe itself isn't on ROS's whitelist but
-				// `start` ends here in ShellExecuteExW, and ROS only
-				// inspects the eventual launcher's parent (the shell).
-				const url = `fivem://connect/${target}`;
-				const launcher = spawn('cmd.exe', ['/c', 'start', '""', url], {
-					detached: true,
-					stdio: 'ignore',
-					windowsHide: true,
-				});
-				launcher.on('error', (err) => this.handleLauncherError(spawnId, err));
-				launcher.unref();
-			} else {
-				// `Start-Process -FilePath '<exe>' -ArgumentList '<args>'`.
-				// Single-quoted PS strings so embedded spaces / backslashes
-				// in `exePath` survive without escaping. `extraArgs` go in
-				// as additional positional `ArgumentList` entries.
-				/* eslint-disable local/code-no-unexternalized-strings -- PowerShell command syntax, not user text. */
-				const psArgList = ['+connect', target, ...args.extraArgs]
-					.map((a) => `'${a.replace(/'/g, "''")}'`)
-					.join(',');
-				const psExe = args.exePath.replace(/'/g, "''");
-				/* eslint-enable local/code-no-unexternalized-strings */
-				const psCmd = `Start-Process -FilePath '${psExe}' -ArgumentList ${psArgList}`;
-				const launcher = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', psCmd], {
-					detached: true,
-					stdio: 'ignore',
-					windowsHide: true,
-				});
-				launcher.on('error', (err) => this.handleLauncherError(spawnId, err));
-				launcher.unref();
-			}
+			// `Start-Process -FilePath '<exe>' -ArgumentList '<args>'`.
+			// Single-quoted PS strings so embedded spaces / backslashes
+			// in `exePath` survive without escaping. `extraArgs` go in
+			// as additional positional `ArgumentList` entries.
+			/* eslint-disable local/code-no-unexternalized-strings -- PowerShell command syntax, not user text. */
+			const psArgList = ['+connect', target, ...args.extraArgs]
+				.map((a) => `'${a.replace(/'/g, "''")}'`)
+				.join(',');
+			const psExe = args.exePath.replace(/'/g, "''");
+			/* eslint-enable local/code-no-unexternalized-strings */
+			const psCmd = `Start-Process -FilePath '${psExe}' -ArgumentList ${psArgList}`;
+			const launcher = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', psCmd], {
+				detached: true,
+				stdio: 'ignore',
+				windowsHide: true,
+			});
+			launcher.on('error', (err) => this.handleLauncherError(spawnId, err));
+			launcher.unref();
 		} catch (err) {
-			// Sync spawn() failure (e.g. cmd.exe / powershell.exe missing
-			// from PATH) — propagate as Promise rejection, matching the
-			// FXServer spawn convention.
+			// Sync spawn() failure (e.g. powershell.exe missing from PATH) —
+			// propagate as Promise rejection, matching the FXServer spawn
+			// convention.
 			throw err;
 		}
 
