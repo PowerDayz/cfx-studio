@@ -31,7 +31,7 @@ import type {
 import { emptyGraphDoc, nextEdgeId } from '../../../../_shared/visual/doc.js';
 import { nodeVarSet, nodeVarGet, nodeCustomEvent, nodeCommand, nodeTriggerEvent } from '../../../../_shared/visual/sig-to-node.js';
 import { isAssignable, type EditorType } from '../../../../_shared/visual/types.js';
-import type { GraphDiagnostic } from '../../../../_shared/visual/diagnostics.js';
+import type { GraphDiagnostic, TrustDiagnostic } from '../../../../_shared/visual/diagnostics.js';
 
 import { vscode } from './messages';
 import { NODE_TYPES } from './nodes.js';
@@ -44,6 +44,20 @@ import './styles.css';
 interface FlowNodeData extends Record<string, unknown> {
 	bnode: BNode;
 	onPatch: (next: BNode) => void;
+	/**
+	 * Diagnostics raised by the trust analyzer that target this node.
+	 * Empty / undefined means the node renders without an overlay.
+	 * The node renderer picks the highest severity and applies a
+	 * border + tooltip listing the messages.
+	 */
+	nodeDiagnostics?: ReadonlyArray<TrustDiagnostic>;
+	/**
+	 * True when at least one error-severity codegen / migration
+	 * diagnostic is attached to this node (exec cycle, value cycle,
+	 * invalid identifier, etc). Renderers add the `has-error` class
+	 * which draws a red ring.
+	 */
+	hasError?: boolean;
 }
 
 const PIN_COLOR_MAP: Record<string, string> = {
@@ -89,6 +103,20 @@ const HISTORY_LIMIT = 50;
 
 function EditorInner() {
 	const [doc, setDoc] = useState<GraphDoc>(() => emptyGraphDoc());
+	// Trust-analyzer diagnostics for the open .fxgraph, replaced
+	// wholesale on each host `trust-diagnostics` message. Keyed by
+	// source nodeId so the node renderer can look up its own entries
+	// without scanning the full list per render.
+	const [trustDiagnostics, setTrustDiagnostics] = useState<ReadonlyArray<TrustDiagnostic>>([]);
+	const trustDiagnosticsByNode = useMemo(() => {
+		const map = new Map<string, TrustDiagnostic[]>();
+		for (const d of trustDiagnostics) {
+			if (!d.nodeId) { continue; }
+			const list = map.get(d.nodeId);
+			if (list) { list.push(d); } else { map.set(d.nodeId, [d]); }
+		}
+		return map;
+	}, [trustDiagnostics]);
 	// The radial is the only quick-add palette. Triggered three ways:
 	//   - Space (centre on viewport, browse mode at the outer ring)
 	//   - Right-click on the canvas (anchored at cursor, same)
@@ -196,7 +224,13 @@ function EditorInner() {
 	const [luaPreviewVisible, setLuaPreviewVisible] = useState<boolean>(false);
 	useEffect(() => {
 		const handler = (e: MessageEvent) => {
-			const msg = e.data as { type: string; doc?: GraphDoc; docVersion?: number; diagnostics?: readonly GraphDiagnostic[]; source?: string };
+			const msg = e.data as {
+				type: string;
+				doc?: GraphDoc;
+				docVersion?: number;
+				diagnostics?: readonly (GraphDiagnostic | TrustDiagnostic)[];
+				source?: string;
+			};
 			if (msg && msg.type === 'init' && msg.doc) {
 				// Loading a different doc resets history — undo/redo
 				// across document boundaries would be confusing.
@@ -204,6 +238,9 @@ function EditorInner() {
 				futureRef.current = [];
 				docVersionRef.current = msg.docVersion ?? 0;
 				setDiagnostics([]);
+				// Drop stale trust diagnostics when switching documents;
+				// the host re-sends a fresh set right after init.
+				setTrustDiagnostics([]);
 				setLuaPreview('');
 				setDoc(msg.doc as GraphDoc);
 				return;
@@ -214,7 +251,15 @@ function EditorInner() {
 					// Stale result for a previous document — ignore.
 					return;
 				}
-				setDiagnostics(msg.diagnostics ?? []);
+				setDiagnostics((msg.diagnostics ?? []) as readonly GraphDiagnostic[]);
+				return;
+			}
+			if (msg && msg.type === 'trust-diagnostics') {
+				// Trust diagnostics aren't versioned (the per-URI
+				// service serialises them) but switching tabs resets
+				// the state on `init`, so a late reply for the prior
+				// doc cannot land here unless the URI matches.
+				setTrustDiagnostics((msg.diagnostics ?? []) as readonly TrustDiagnostic[]);
 				return;
 			}
 			if (msg && msg.type === 'lua-preview') {
@@ -293,7 +338,13 @@ function EditorInner() {
 					id: bn.id,
 					type: 'blueprint',
 					position: prior?.dragging && prior.position ? prior.position : persistedPos,
-					data: { bnode: bn, onPatch: patchNode, missingPins, hasError: errorNodeIds.has(bn.id) },
+					data: {
+						bnode: bn,
+						onPatch: patchNode,
+						missingPins,
+						nodeDiagnostics: trustDiagnosticsByNode.get(bn.id),
+						hasError: errorNodeIds.has(bn.id),
+					},
 					deletable: bn.kind !== 'event' || doc.nodes.filter((n) => n.kind === 'event').length > 1,
 					// Comments behave as a background label: the inner body
 					// is click-through (`pointer-events: none`), and the
@@ -306,7 +357,7 @@ function EditorInner() {
 				};
 			}),
 		);
-	}, [doc, patchNode, missingPins, errorNodeIds, setNodes]);
+	}, [doc, patchNode, missingPins, trustDiagnosticsByNode, errorNodeIds, setNodes]);
 
 	// Exec edges render as animated dashed white "thread of execution"
 	// lines (the deprecated editor's signature look). Value edges use a

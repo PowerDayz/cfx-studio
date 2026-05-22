@@ -29,9 +29,9 @@ const SEARCH_RESULT_LIMIT = 200;
 /**
  * Read-only Natives reference view. Search box at top, list of matches
  * below. Click an entry to copy the function signature to clipboard.
- * Hosted in a secondary sidebar container (`workbench.view.cfxNatives`)
- * registered in `nativesViewContainer.ts`; opened via the
- * `cfx.natives.show` command.
+ * Registered as a second view inside the Cfx sidebar container
+ * (`workbench.view.cfx`) by `nativesViewContainer.ts`; opened via the
+ * `cfx.natives.show` command which calls `viewsService.openView`.
  */
 export class NativesViewPane extends ViewPane {
 	static readonly ID: string = 'cfx.view.natives';

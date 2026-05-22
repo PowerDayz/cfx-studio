@@ -93,6 +93,11 @@ import './natives/nativesViewContainer.js';
 import { registerFxGraphEditor } from './graph/fxgraphEditorContribution.js';
 registerFxGraphEditor();
 
+// Side-effect import: registers ICfxGraphDiagnosticsService. The
+// editor pane publishes analyzer output here after each save; the
+// service forwards changes to any open webview for the same URI.
+import './graph/cfxGraphDiagnosticsService.js';
+
 // Cross-cutting Cfx commands (Phase G). Locate exe, download artifacts,
 // natives reference, debug print. Most other commands ship with their
 // owning subsystem in earlier phases.
