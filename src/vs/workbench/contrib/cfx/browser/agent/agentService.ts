@@ -41,7 +41,7 @@ const DEFAULT_MODEL = 'claude-sonnet-4-6';
  * Per-window in-memory state; conversations are lost on reload, which
  * is intentional for slice 1 (no persistence concerns).
  */
-class AgentService extends Disposable implements IAgentService {
+export class AgentService extends Disposable implements IAgentService {
 	declare readonly _serviceBrand: undefined;
 
 	private _state: AgentRunState = 'idle';

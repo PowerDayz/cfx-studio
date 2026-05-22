@@ -34,7 +34,11 @@ import type { GraphDoc } from '../../_shared/visual/doc.js';
  * cfx_restart_resource, cfx_create_resource, cfx_add_to_ensure)
  * behind the plan-card + diff-card gates.
  */
-const READ_FILE_MAX_BYTES = 256 * 1024;
+/**
+ * Hard cap on file size for any read-tool invocation. Exposed so tests
+ * can assert the boundary without having to construct a 256KB+ payload.
+ */
+export const READ_FILE_MAX_BYTES = 256 * 1024;
 const LIST_RESOURCE_FILES_MAX_DEPTH = 3;
 const LIST_RESOURCE_FILES_MAX_ENTRIES = 500;
 const EXCLUDED_DIR_NAMES = new Set<string>(['node_modules', '.git', '.vscode', '.cfx', 'cache', 'logs', 'out', 'dist']);
@@ -309,17 +313,7 @@ class AgentToolRunner extends Disposable implements IAgentToolRunner {
 	}
 
 	private resolveWorkspaceFile(relativePath: string): { uri: URI; basename: string } {
-		const root = this.workspaceRoot();
-		if (!root) {
-			throw new Error('no workspace open');
-		}
-		const trimmed = relativePath.replace(/^[\\/]+/, '');
-		if (trimmed.includes('..')) {
-			throw new Error('path may not contain `..`');
-		}
-		const uri = joinPath(root, ...trimmed.split(/[\\/]/));
-		const basename = uri.path.split('/').pop() ?? '<file>';
-		return { uri, basename };
+		return resolveWorkspaceFile(relativePath, this.workspaceRoot());
 	}
 
 	private relativizePath(uri: URI, root: URI | undefined): string {
@@ -340,22 +334,56 @@ class AgentToolRunner extends Disposable implements IAgentToolRunner {
 	}
 }
 
-function assertWithinReadCap(byteLength: number, path: string): void {
+/**
+ * Throws if `byteLength` exceeds the read cap. Exported for unit tests
+ * — every read tool routes through this helper so the cap stays
+ * uniform across cfx_read_file, cfx_inspect_graph, cfx_show_generated_lua.
+ */
+export function assertWithinReadCap(byteLength: number, path: string): void {
 	if (byteLength > READ_FILE_MAX_BYTES) {
 		throw new Error(`file too large (${byteLength} bytes; cap is ${READ_FILE_MAX_BYTES}). Refusing to read ${path}.`);
 	}
 }
 
-function requireString(value: unknown, fieldName: string): string {
+/**
+ * Validates that the model passed a non-empty string for `fieldName`,
+ * raising a descriptive error otherwise. Exported for unit tests.
+ */
+export function requireString(value: unknown, fieldName: string): string {
 	if (typeof value !== 'string' || value.length === 0) {
 		throw new Error(`${fieldName} required`);
 	}
 	return value;
 }
 
-function clampPositive(value: unknown, fallback: number, max: number): number {
+/**
+ * Coerces a model-supplied numeric argument into the inclusive range
+ * `[1, max]`, falling back to `fallback` when the input is not a finite
+ * number. Exported for unit tests.
+ */
+export function clampPositive(value: unknown, fallback: number, max: number): number {
 	const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 	return Math.max(1, Math.min(n, max));
+}
+
+/**
+ * Resolves a model-supplied workspace-relative path against `root`,
+ * rejecting any `..` traversal and stripping leading slashes / backslashes
+ * so the model can ask for `/src/foo` or `src/foo` interchangeably.
+ * Exported so the validation logic is unit-testable without spinning up
+ * the full AgentToolRunner DI graph.
+ */
+export function resolveWorkspaceFile(relativePath: string, root: URI | undefined): { uri: URI; basename: string } {
+	if (!root) {
+		throw new Error('no workspace open');
+	}
+	const trimmed = relativePath.replace(/^[\\/]+/, '');
+	if (trimmed.includes('..')) {
+		throw new Error('path may not contain `..`');
+	}
+	const uri = joinPath(root, ...trimmed.split(/[\\/]/));
+	const basename = uri.path.split('/').pop() ?? '<file>';
+	return { uri, basename };
 }
 
 registerSingleton(IAgentToolRunner, AgentToolRunner, InstantiationType.Delayed);

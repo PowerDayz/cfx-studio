@@ -144,7 +144,7 @@ class AnthropicProvider extends Disposable implements IAgentProvider {
  * meaning depends on the block type announced by the corresponding
  * content_block_start. We track that per `index`.
  */
-interface BlockState {
+export interface BlockState {
 	readonly type: 'text' | 'tool_use';
 	readonly toolId?: string;
 	readonly toolName?: string;
@@ -196,7 +196,7 @@ async function parseSseStream(
 	onEvent.fire({ kind: 'message_end', stopReason });
 }
 
-function handleSseEvent(
+export function handleSseEvent(
 	json: string,
 	blocks: Map<number, BlockState>,
 	onEvent: Emitter<ProviderEvent>,
@@ -263,7 +263,7 @@ function handleSseEvent(
 
 // ---- Cfx <-> Anthropic format conversion ----
 
-function toAnthropicMessages(messages: ReadonlyArray<AgentMessage>): Array<object> {
+export function toAnthropicMessages(messages: ReadonlyArray<AgentMessage>): Array<object> {
 	// Anthropic groups consecutive tool_results into a single user
 	// message with multiple tool_result content blocks. We emit one
 	// `{role: 'user', content: [tool_result]}` per ToolResultMessage —
