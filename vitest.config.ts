@@ -27,6 +27,12 @@ export default defineConfig({
 		// tree (which has many .test.ts files in extensions/) is not
 		// dragged in.
 		include: ['src/vs/workbench/contrib/cfx/**/*.test.ts'],
+		// Exclude the cfx `test/` subtree — those files use the upstream
+		// mocha `suite/test/assert` API and run via `npm run test-node`
+		// against the compiled `out/` build. Per TESTING.md the two
+		// runners coexist by file layout: vitest covers co-located
+		// `*.test.ts` next to source; mocha covers the `test/` subtree.
+		exclude: ['src/vs/workbench/contrib/cfx/test/**', '**/node_modules/**'],
 		environment: 'node',
 		// Keep workers off the parallel by default — pure-logic tests
 		// are fast enough single-threaded and easier to debug.

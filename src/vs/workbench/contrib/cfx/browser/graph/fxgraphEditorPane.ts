@@ -26,12 +26,13 @@ import { IOverlayWebview, IWebviewService, WebviewContentPurpose } from '../../.
 import { asWebviewUri, webviewGenericCspSource } from '../../../webview/common/webview.js';
 import { IGameModeService } from '../../common/gameMode.js';
 import { INativesService } from '../../common/natives.js';
+import { ICfxGraphDiagnosticsService } from '../../common/cfxGraphDiagnostics.js';
 import type { HostToWebviewMessage, WebviewToHostMessage } from '../../common/fxgraphMessages.js';
 import { FxGraphEditorInput } from './fxgraphEditorInput.js';
 import { generateLua } from '../../_shared/visual/codegen.js';
-import type { GraphDoc } from '../../_shared/visual/doc.js';
+import { analyze, GraphDiagnosticCollector } from '../../_shared/visual/diagnostics.js';
+import { isGraphDoc, type GraphDoc } from '../../_shared/visual/doc.js';
 import { migrateGraphDoc } from '../../_shared/visual/migrate.js';
-import { GraphDiagnosticCollector } from '../../_shared/visual/diagnostics.js';
 
 const MEDIA_DIR_REL = 'vs/workbench/contrib/cfx/browser/graph/media/fxgraph';
 
@@ -87,8 +88,26 @@ export class FxGraphEditorPane extends EditorPane {
 		@INotificationService private readonly notificationService: INotificationService,
 		@ILogService private readonly logService: ILogService,
 		@INativesService private readonly nativesService: INativesService,
+		@ICfxGraphDiagnosticsService private readonly diagnosticsService: ICfxGraphDiagnosticsService,
 	) {
 		super(FxGraphEditorPane.ID, group, telemetryService, themeService, storageService);
+		// Forward trust-analyzer diagnostics to the webview whenever the
+		// service emits for the open URI. Covers both our own publishes
+		// from `flushSave` and any external publishes (e.g. a peer file
+		// changing in a future cross-graph rule). Goes over the dedicated
+		// `trust-diagnostics` channel so it doesn't collide with the
+		// codegen `diagnostics` channel posted directly from `flushSave`.
+		this._register(this.diagnosticsService.onDidChangeDiagnostics((e) => {
+			if (!this.currentResource) { return; }
+			if (e.resource.toString() !== this.currentResource.toString()) { return; }
+			this.postIfReady({ type: 'trust-diagnostics', diagnostics: e.diagnostics });
+		}));
+	}
+
+	private postIfReady(msg: HostToWebviewMessage): void {
+		if (this.webviewReady) {
+			this.webviewMD.value?.postMessage(msg);
+		}
 	}
 
 	protected createEditor(parent: HTMLElement): void {
@@ -158,12 +177,35 @@ export class FxGraphEditorPane extends EditorPane {
 		} else {
 			this.pendingInit = init;
 		}
+
+		// Publish initial diagnostics for this file. The service fires
+		// onDidChangeDiagnostics → our subscription posts to the
+		// webview when it's ready; the 'ready' handler below also
+		// re-posts to cover the buffered case.
+		this.publishDiagnostics(input.resource, doc);
+	}
+
+	private publishDiagnostics(resource: import('../../../../../base/common/uri.js').URI, doc: unknown): void {
+		if (!isGraphDoc(doc)) { return; }
+		try {
+			const diagnostics = analyze(doc);
+			this.diagnosticsService.set(resource, diagnostics);
+		} catch (err) {
+			this.logService.error(`[cfx] fxgraph diagnostics analyze failed for ${resource.toString()}`, err);
+		}
 	}
 
 	override clearInput(): void {
+		// Flush any pending save before tearing the webview down so the
+		// user doesn't lose the last edit when they switch tabs.
 		this.teardownPendingSave();
 		this.currentInput?.setSaveHandler(undefined);
 		this.currentInput = undefined;
+		// Release per-URI diagnostics so closed files don't leak entries
+		// in the diagnostics service's internal Map.
+		if (this.currentResource) {
+			this.diagnosticsService.clear(this.currentResource);
+		}
 		this.pendingInit = undefined;
 		this.currentResource = undefined;
 		this.webviewReady = false;
@@ -283,6 +325,17 @@ export class FxGraphEditorPane extends EditorPane {
 					this.webviewMD.value?.postMessage(this.pendingInit);
 					this.pendingInit = undefined;
 				}
+				// Replay the latest trust diagnostics for the open URI
+				// now that the webview is listening. The onDidChange
+				// subscription drops messages posted while
+				// `webviewReady === false`. Codegen diagnostics are
+				// (re-)posted on the next flushSave; we don't cache
+				// them in a service because they're a function of the
+				// in-memory doc + generated Lua, not of the URI.
+				if (this.currentResource) {
+					const cached = this.diagnosticsService.get(this.currentResource);
+					this.webviewMD.value?.postMessage({ type: 'trust-diagnostics', diagnostics: cached });
+				}
 				break;
 			case 'change':
 				// Persist the doc to disk + regenerate the sibling .lua.
@@ -353,10 +406,16 @@ export class FxGraphEditorPane extends EditorPane {
 				this.logService.warn(`[cfx] fxgraph autosave: ${errorCount} codegen error(s)`);
 			}
 
+			// Refresh trust diagnostics after every save so the analyzer
+			// matches the on-disk doc + generated Lua. The service
+			// fires onDidChangeDiagnostics → our subscription forwards
+			// to the webview over the `trust-diagnostics` channel.
+			this.publishDiagnostics(uri, doc);
+
 			// .fxgraph wrote successfully — the canonical source is on
 			// disk, so the tab is clean. (.lua sibling is a generated
 			// artifact; its codegen-error state is surfaced via the
-			// diagnostics message above, not via the dirty flag.)
+			// `diagnostics` message above, not via the dirty flag.)
 			input?.setDirty(false);
 			return true;
 		} catch (err) {

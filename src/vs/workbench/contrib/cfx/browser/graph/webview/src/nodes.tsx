@@ -8,6 +8,8 @@ import { Handle, Position, NodeResizer, type NodeProps } from '@xyflow/react';
 
 import type { BNode, PinDef } from '../../../../_shared/visual/doc.js';
 import type { EditorType } from '../../../../_shared/visual/types.js';
+import { type TrustDiagnostic } from '../../../../_shared/visual/diagnostics.js';
+import { diagOverlay as computeDiagOverlay } from './diagOverlay.js';
 import { InlineValueEditor } from './InlineEditor.js';
 
 /**
@@ -43,15 +45,35 @@ interface FlowData extends Record<string, unknown> {
 	 */
 	missingPins?: ReadonlySet<string>;
 	/**
-	 * True when at least one error-severity diagnostic is attached to
-	 * this node (exec cycle, value cycle, invalid identifier, etc).
-	 * Renderers add the `has-error` class which draws a red ring.
+	 * Diagnostics raised by the trust analyzer that target this node.
+	 * Empty / undefined renders without a trust overlay.
+	 */
+	nodeDiagnostics?: ReadonlyArray<TrustDiagnostic>;
+	/**
+	 * True when at least one error-severity codegen / migration
+	 * diagnostic is attached to this node (exec cycle, value cycle,
+	 * invalid identifier, etc). Renderers add the `has-error` class
+	 * which draws a red ring. Orthogonal to `nodeDiagnostics` — the
+	 * two families decorate the node independently.
 	 */
 	hasError?: boolean;
 }
 
-function bnodeClass(kind: string, data: FlowData): string {
-	return `bnode kind-${kind}${data.hasError ? ' has-error' : ''}`;
+/**
+ * Local thin wrapper around the pure `diagOverlay` helper. Pulls the
+ * `nodeDiagnostics` field off `FlowData` and forwards to the helper
+ * so the per-node-type components can call `diagOverlay(data)` without
+ * each spelling out `data.nodeDiagnostics`.
+ */
+function diagOverlay(data: FlowData): { className: string; title: string | undefined } {
+	return computeDiagOverlay(data.nodeDiagnostics);
+}
+
+function bnodeClass(kind: string, data: FlowData, overlay: { className: string }): string {
+	const classes = [`bnode kind-${kind}`];
+	if (overlay.className) { classes.push(overlay.className); }
+	if (data.hasError) { classes.push('has-error'); }
+	return classes.join(' ');
 }
 
 const PIN_COLOR: Record<string, string> = {
@@ -96,8 +118,9 @@ const EventNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	// one is missing so the node title isn't blank for older files.
 	const eventName = n.event || (n as { eventName?: string }).eventName || '???';
 	const out = n.outExec[0];
+	const overlay = diagOverlay(data);
 	return (
-		<div className={bnodeClass('event', data)}>
+		<div className={bnodeClass('event', data, overlay)} title={overlay.title}>
 			<div className="header">
 				<span>⚡ on {eventName}</span>
 			</div>
@@ -118,8 +141,9 @@ const EventNode: React.FC<{ data: FlowData }> = ({ data }) => {
 const ExecCallNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'exec-call' }>;
 	const title = n.callee === 'invoke_native' && n.nativeName ? nativeDisplay(n.nativeName) : n.callee;
+	const overlay = diagOverlay(data);
 	return (
-		<div className={bnodeClass('exec-call', data)}>
+		<div className={bnodeClass('exec-call', data, overlay)} title={overlay.title}>
 			<div className="header">
 				<span>{title}</span>
 				{n.nativeHash && <span style={{ fontSize: 10, opacity: 0.7 }}>{n.nativeHash}</span>}
@@ -157,8 +181,9 @@ const ExecCallNode: React.FC<{ data: FlowData }> = ({ data }) => {
 
 const ControlNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'control' }>;
+	const overlay = diagOverlay(data);
 	return (
-		<div className={bnodeClass('control', data)}>
+		<div className={bnodeClass('control', data, overlay)} title={overlay.title}>
 			<div className="header">
 				<span>{n.op}</span>
 			</div>
@@ -191,8 +216,9 @@ const ControlNode: React.FC<{ data: FlowData }> = ({ data }) => {
 const PureNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'pure' }>;
 	const title = n.callee === 'invoke_native' && n.nativeName ? nativeDisplay(n.nativeName) : n.callee;
+	const overlay = diagOverlay(data);
 	return (
-		<div className={bnodeClass('pure', data)}>
+		<div className={bnodeClass('pure', data, overlay)} title={overlay.title}>
 			<div className="header"><span>{title}</span></div>
 			{n.argPins.map((p) => (
 				<PinRow
@@ -215,8 +241,9 @@ const PureNode: React.FC<{ data: FlowData }> = ({ data }) => {
 
 const LiteralNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'literal' }>;
+	const overlay = diagOverlay(data);
 	return (
-		<div className={bnodeClass('literal', data)}>
+		<div className={bnodeClass('literal', data, overlay)} title={overlay.title}>
 			<div className="header"><span>{n.valueType} literal</span></div>
 			<div className="pin-row">
 				<div className="pin left" style={{ paddingLeft: 12 }}>
@@ -237,8 +264,9 @@ const LiteralNode: React.FC<{ data: FlowData }> = ({ data }) => {
 
 const VarGetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'var-get' }>;
+	const overlay = diagOverlay(data);
 	return (
-		<div className={bnodeClass('var-get', data)}>
+		<div className={bnodeClass('var-get', data, overlay)} title={overlay.title}>
 			<div className="header"><span>get {n.name}</span></div>
 			<div className="pin-row">
 				<div />
@@ -253,8 +281,9 @@ const VarGetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 
 const VarSetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'var-set' }>;
+	const overlay = diagOverlay(data);
 	return (
-		<div className={bnodeClass('var-set', data)}>
+		<div className={bnodeClass('var-set', data, overlay)} title={overlay.title}>
 			<div className="header"><span>set {n.name}</span></div>
 			<div className="pin-row exec">
 				<div className="pin left">
@@ -281,8 +310,9 @@ const VarSetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 const CommandNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'command' }>;
 	const out = n.outExec[0];
+	const overlay = diagOverlay(data);
 	return (
-		<div className={bnodeClass('command', data)}>
+		<div className={bnodeClass('command', data, overlay)} title={overlay.title}>
 			<div className="header">
 				<span>⚙ /{n.command || '???'}</span>
 				{n.restricted && <span style={{ fontSize: 10, opacity: 0.7 }}>restricted</span>}
@@ -306,6 +336,7 @@ const CommentNode: React.FC<{ data: FlowData; selected?: boolean }> = ({ data, s
 	const [editing, setEditing] = useState(false);
 	const w = n.size?.w ?? 240;
 	const h = n.size?.h ?? 120;
+	const overlay = diagOverlay(data);
 	return (
 		<>
 			{/* shouldResize gates the resize handles to bottom-right only.
@@ -325,7 +356,8 @@ const CommentNode: React.FC<{ data: FlowData; selected?: boolean }> = ({ data, s
 				}}
 			/>
 			<div
-				className={bnodeClass('comment', data)}
+				className={bnodeClass('comment', data, overlay)}
+				title={overlay.title}
 				style={{
 					width: w,
 					height: h,
