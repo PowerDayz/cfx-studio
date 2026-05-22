@@ -41,6 +41,7 @@ import {
 } from '../../common/agent.js';
 import { ANTHROPIC_API_KEY_SECRET, ANTHROPIC_VENDOR } from './anthropicProvider.js';
 import { OPENAI_API_KEY_SECRET, OPENAI_VENDOR } from './openaiProvider.js';
+import { CODEX_SUBSCRIPTION_PREFIX } from './codexSubscriptionProvider.js';
 import { promptForApiKey } from './apiKeyPrompt.js';
 
 const MEDIA_DIR_REL = 'vs/workbench/contrib/cfx/browser/agent/media/agent';
@@ -218,20 +219,38 @@ export class AgentViewPane extends ViewPane {
 	private async listModels(): Promise<{ models: ModelDescriptor[]; encryptionAvailable: boolean }> {
 		const ids = this.languageModels.getLanguageModelIds();
 		const out: ModelDescriptor[] = [];
-		// `getValue('hasKey')`-style checks happen per-vendor; cache to
-		// avoid a secret-storage round-trip per model in the same vendor.
-		const authCache = new Map<string, boolean>();
-		const lookupAuth = async (vendor: string) => {
-			const cached = authCache.get(vendor);
+		// API-key vendors are cached so we don't ask SecretStorage once per
+		// model. Subscription / extension-owned models bypass the cache —
+		// their auth state isn't a single secret-storage key.
+		const apiKeyAuthCache = new Map<string, boolean>();
+		const lookupApiKeyAuth = async (secretKey: string) => {
+			const cached = apiKeyAuthCache.get(secretKey);
 			if (cached !== undefined) { return cached; }
-			const hasAuth = await this.vendorHasAuth(vendor);
-			authCache.set(vendor, hasAuth);
+			const hasAuth = Boolean(await this.secretStorage.get(secretKey));
+			apiKeyAuthCache.set(secretKey, hasAuth);
 			return hasAuth;
 		};
 		for (const id of ids) {
 			const meta = this.languageModels.lookupLanguageModel(id);
 			if (!meta) { continue; }
-			const hasAuth = await lookupAuth(meta.vendor);
+			let hasAuth: boolean;
+			if (id.startsWith(CODEX_SUBSCRIPTION_PREFIX)) {
+				// Subscription-via-codex: codex owns auth (~/.codex/auth.json
+				// after the user runs `codex login`). We assume the CLI is
+				// authed when present — the contribution only registered the
+				// model after detecting `codex` on PATH. A stale/expired
+				// login surfaces as a runtime error in the panel.
+				hasAuth = true;
+			} else if (meta.vendor === ANTHROPIC_VENDOR) {
+				hasAuth = await lookupApiKeyAuth(ANTHROPIC_API_KEY_SECRET);
+			} else if (meta.vendor === OPENAI_VENDOR) {
+				hasAuth = await lookupApiKeyAuth(OPENAI_API_KEY_SECRET);
+			} else {
+				// Extension-owned vendors (e.g. Copilot if installed) handle
+				// auth out-of-band; assume OK and let the provider error
+				// loudly on first call if not.
+				hasAuth = true;
+			}
 			out.push({
 				id: meta.id,
 				displayName: meta.name,
@@ -241,20 +260,6 @@ export class AgentViewPane extends ViewPane {
 			});
 		}
 		return { models: out, encryptionAvailable: this.secretStorage.type === 'persisted' };
-	}
-
-	private async vendorHasAuth(vendor: string): Promise<boolean> {
-		if (vendor === ANTHROPIC_VENDOR) {
-			return Boolean(await this.secretStorage.get(ANTHROPIC_API_KEY_SECRET));
-		}
-		if (vendor === OPENAI_VENDOR) {
-			return Boolean(await this.secretStorage.get(OPENAI_API_KEY_SECRET));
-		}
-		// Unknown vendor (e.g. Copilot via its extension) — assume auth is
-		// handled out-of-band. The provider will fail loudly on first use
-		// if it isn't authenticated, which surfaces in the panel's error
-		// message branch.
-		return true;
 	}
 
 	private resolveSelectedModelId(models: ModelDescriptor[]): string | undefined {

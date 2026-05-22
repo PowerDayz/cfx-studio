@@ -68,6 +68,7 @@ import './agent/cfxChatServices.js';
 import './agent/secretRegistry.js';
 import './agent/anthropicProvider.js';
 import './agent/openaiProvider.js';
+import './agent/codexSubscriptionProvider.js';
 import './agent/agentToolRunner.js';
 import './agent/agentService.js';
 import './agent/agentViewContainer.js';
