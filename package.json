@@ -37,6 +37,7 @@
     "cfx:dev:relaunch": "node cfx-scripts/cfx-dev.mjs --no-rebuild",
     "cfx:fetch-natives": "node cfx-scripts/fetch-natives.mjs",
     "cfx:build-fxgraph-webview": "node cfx-scripts/build-fxgraph-webview.mjs",
+    "cfx:build-agent-webview": "node cfx-scripts/build-agent-webview.mjs",
     "cfx:test": "vitest run --no-coverage",
     "cfx:test:watch": "vitest",
     "gulp": "node --max-old-space-size=8192 ./node_modules/gulp/bin/gulp.js",

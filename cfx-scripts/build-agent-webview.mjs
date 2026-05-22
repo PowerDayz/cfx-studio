@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 /**
- * Build the .fxgraph React-Flow webview into
- * src/vs/workbench/contrib/cfx/browser/graph/media/fxgraph/.
+ * Build the Cfx Agent panel webview into
+ * src/vs/workbench/contrib/cfx/browser/agent/media/agent/.
  *
  * Pipeline (idempotent):
- *   1. cd src/vs/workbench/contrib/cfx/browser/graph/webview
+ *   1. cd src/vs/workbench/contrib/cfx/browser/agent/webview
  *   2. If node_modules is missing, `npm install` (~30s, cached)
  *   3. `npm run build` -> writes bundle.js + bundle.css next to index.html
  *   4. Wipe webview/node_modules so vscode's gulp tsc doesn't walk into
  *      @babel/core's TS sources (the bundle is self-contained).
  *
- * Skip if `media/fxgraph/bundle.js` is newer than every webview source
+ * Skip if `media/agent/bundle.js` is newer than every webview source
  * file. Invoked from cfx-dev.mjs / cfx-build-win.mjs.
+ *
+ * Mirrors build-fxgraph-webview.mjs verbatim. Any structural change
+ * should land in both.
  */
 
 import { execSync } from 'node:child_process';
@@ -21,16 +24,16 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FORK = resolve(__dirname, '..');
-const WEBVIEW_DIR = join(FORK, 'src', 'vs', 'workbench', 'contrib', 'cfx', 'browser', 'graph', 'webview');
-const MEDIA_DIR = join(FORK, 'src', 'vs', 'workbench', 'contrib', 'cfx', 'browser', 'graph', 'media', 'fxgraph');
+const WEBVIEW_DIR = join(FORK, 'src', 'vs', 'workbench', 'contrib', 'cfx', 'browser', 'agent', 'webview');
+const MEDIA_DIR = join(FORK, 'src', 'vs', 'workbench', 'contrib', 'cfx', 'browser', 'agent', 'media', 'agent');
 const BUNDLE = join(MEDIA_DIR, 'bundle.js');
 
 function log(msg) {
-	console.log(`[build-fxgraph-webview] ${msg}`);
+	console.log(`[build-agent-webview] ${msg}`);
 }
 
 function fail(msg) {
-	console.error(`[build-fxgraph-webview] FATAL: ${msg}`);
+	console.error(`[build-agent-webview] FATAL: ${msg}`);
 	process.exit(1);
 }
 
@@ -68,11 +71,12 @@ try {
 
 log(`bundle written to ${BUNDLE}`);
 
-// Delete webview/node_modules after the bundle is produced. The bundle is
-// self-contained; node_modules is only needed during build. Leaving it in
-// place pollutes the gulp `src/**` glob that drives the vscode tsc compile,
-// which then walks into @babel/core's TS source and emits ~20 spurious type
-// errors. Cost of removal: ~30s reinstall on the next iteration. Worth it.
+// Delete webview/node_modules after the bundle is produced. The bundle
+// is self-contained; node_modules is only needed during build. Leaving
+// it in place pollutes the gulp `src/**` glob that drives the vscode
+// tsc compile, which then walks into @babel/core's TS source and emits
+// ~20 spurious type errors. Cost of removal: ~30s reinstall on the
+// next iteration. Worth it.
 const webviewNodeModules = join(WEBVIEW_DIR, 'node_modules');
 if (existsSync(webviewNodeModules)) {
 	log('cleaning webview/node_modules to keep tsc out of @babel/core src…');

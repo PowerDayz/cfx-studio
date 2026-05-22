@@ -1070,6 +1070,11 @@ export default tseslint.config(
 					'target': 'src/vs/workbench/contrib/cfx/**/*.test.ts',
 					'restrictions': [
 						'vs/workbench/contrib/cfx/**/*',
+						// Pure-utility primitives from vs/base (URI,
+						// CancellationToken, Emitter, …) are dependency-free
+						// and routinely needed by tests that construct mocks
+						// or feed AgentService-style streams. Per TESTING.md:
+						// stay out of vs/platform/* and vs/workbench/services/*.
 						'vs/base/**/*',
 						'vitest'
 					]

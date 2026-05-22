@@ -46,8 +46,26 @@ registerCfxTabDecoration();
 import { registerEphemeralBridge } from './bridge/ephemeralBridgeService.js';
 registerEphemeralBridge();
 
+// Side-effect import: registers ICfxToolFacade as a singleton. Must load
+// before the MCP bridge (which injects ICfxToolFacade) and before any
+// future built-in agent that consumes the same facade.
+import './tools/cfxToolFacade.js';
+
 import { registerCfxMcpBridge } from './mcpBridge/cfxMcpBridgeContribution.js';
 registerCfxMcpBridge();
+
+// Built-in Cfx Agent (slice 1: read-only diagnose mode). The order is
+// important: each side-effect import registers its singleton; consumers
+// further down inject services from above.
+import './agent/secretRegistry.js';
+import './agent/anthropicProvider.js';
+import './agent/agentToolRunner.js';
+import './agent/agentService.js';
+// Agent panel UI deferred to PR #14 (vscode.lm-based provider picker).
+// import './agent/agentViewContainer.js';
+
+import { registerAgentCommands } from './agent/agentCommands.js';
+registerAgentCommands();
 
 import { registerAutoRestartContribution } from './server/autoRestart.js';
 registerAutoRestartContribution();

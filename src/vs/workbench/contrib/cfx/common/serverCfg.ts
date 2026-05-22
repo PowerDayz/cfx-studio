@@ -60,6 +60,17 @@ export interface IServerCfgService {
 	renameEnsure(oldName: string, newName: string): Promise<void>;
 
 	/**
+	 * Flat map of every `set` / `sets` / `setr` directive value reachable
+	 * via the exec chain, keyed by convar name. Last write wins when a
+	 * convar is set multiple times (matches FXServer's runtime behavior).
+	 *
+	 * Used by the Cfx Agent's secret registry to identify license keys,
+	 * RCON passwords, and pattern-matched secret convars so the redactor
+	 * can mask those values before any tool output reaches the model.
+	 */
+	getConvars(): Promise<ReadonlyMap<string, string>>;
+
+	/**
 	 * Port the FXServer accepts game-client connections on, parsed from
 	 * the first `endpoint_add_tcp` directive reachable via the exec chain
 	 * (TCP and UDP must match for a working FiveM/RedM endpoint, so the
