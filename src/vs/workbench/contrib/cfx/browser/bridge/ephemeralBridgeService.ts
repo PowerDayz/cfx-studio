@@ -33,7 +33,9 @@ const BRIDGE_RESOURCE_NAME = 'cfx-studio-bridge';
  * (chose "Don't manage this folder" on the hash-mismatch prompt). The
  * IDE then leaves their `resources/cfx-studio-bridge/` folder alone for
  * good — `prepareSession` returns `[]` and no session lock is written.
- * Cleared only by explicit user action (delete the folder + relaunch).
+ * Cleared automatically on the next prepareSession after the user
+ * deletes the bridge folder (the documented way to re-enable
+ * IDE management).
  */
 const STORAGE_USER_OWNED_KEY = 'cfx.bridge.userOwnedFolder';
 
@@ -195,9 +197,11 @@ class EphemeralBridgeService extends Disposable implements IEphemeralBridgeServi
 
 		// (2) User opted out of IDE management for this workspace's
 		// bridge folder. We never touch it again until the memento is
-		// cleared (which today is by deleting the folder + relaunching;
-		// no command surface in the first slice).
-		if (this.isUserOwnedFolder()) {
+		// cleared. The memento is cleared automatically when the user
+		// deletes the bridge folder (the documented way to re-enable
+		// IDE management) so the next prepareSession can recreate it.
+		const paths = bridgePaths(workspaceRoot);
+		if (await this.isUserOwnedFolder(paths)) {
 			this.logService.info(
 				'[cfx] ephemeral bridge: workspace memento marks this folder as user-owned; skipping',
 			);
@@ -209,7 +213,6 @@ class EphemeralBridgeService extends Disposable implements IEphemeralBridgeServi
 		// it (despite the comment in fxmanifest.lua telling them not to).
 		// Show a one-time notification and skip — never silently
 		// overwrite user files.
-		const paths = bridgePaths(workspaceRoot);
 		const mismatchedFiles = await this.detectUserEdits(paths);
 		if (mismatchedFiles.length > 0) {
 			void this.maybeNotifyMismatch(workspaceRoot, mismatchedFiles);
@@ -327,8 +330,23 @@ class EphemeralBridgeService extends Disposable implements IEphemeralBridgeServi
 		}
 	}
 
-	private isUserOwnedFolder(): boolean {
-		return this.storageService.getBoolean(STORAGE_USER_OWNED_KEY, StorageScope.WORKSPACE, false);
+	private async isUserOwnedFolder(paths: BridgePaths): Promise<boolean> {
+		if (!this.storageService.getBoolean(STORAGE_USER_OWNED_KEY, StorageScope.WORKSPACE, false)) {
+			return false;
+		}
+		// Memento is set, but if the folder is gone the user has taken
+		// the documented re-enable path (delete the folder). Clear the
+		// memento — and the related mismatch-notification flag — so the
+		// next prepare can recreate the bridge cleanly.
+		if (!(await this.fileService.exists(paths.resourceDir))) {
+			this.logService.info(
+				'[cfx] ephemeral bridge: user-owned folder no longer exists; clearing memento to re-enable IDE management',
+			);
+			this.storageService.remove(STORAGE_USER_OWNED_KEY, StorageScope.WORKSPACE);
+			this.storageService.remove(STORAGE_MISMATCH_SHOWN_KEY, StorageScope.WORKSPACE);
+			return false;
+		}
+		return true;
 	}
 
 	private async maybeNotifyMismatch(workspaceRoot: URI, mismatchedFiles: string[]): Promise<void> {

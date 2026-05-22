@@ -99,13 +99,12 @@ export class CfxNodeService extends Disposable implements ICfxNodeService {
 			process.kill(pid, 0);
 			return true;
 		} catch (err) {
-			// EPERM means the pid exists but we don't have permission to
-			// signal it (cross-user / elevated processes). Treat that as
-			// alive — the stale-bridge cleanup must not reap artefacts of
-			// an IDE whose process we just can't see clearly.
-			// ESRCH (and anything else) means the pid is gone.
-			const code = (err as NodeJS.ErrnoException | undefined)?.code;
-			return code === 'EPERM';
+			// EPERM means the process exists but we lack permission to
+			// signal it (e.g. a parallel IDE running under a different
+			// uid still owns the bridge artefacts). Treat as alive so
+			// recoverIfNeeded won't reap state owned by a live process.
+			if ((err as NodeJS.ErrnoException)?.code === 'EPERM') { return true; }
+			return false;
 		}
 	}
 
