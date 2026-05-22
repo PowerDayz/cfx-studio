@@ -13,6 +13,7 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { InstantiationType, registerSingleton } from '../../../../../platform/instantiation/common/extensions.js';
 import {
 	IResourceDiscoveryService,
+	IResourceListOptions,
 	IResourceModel,
 	type ManifestKind,
 	type RuntimeState,
@@ -38,11 +39,23 @@ const EXCLUDED_DIR_NAMES = new Set<string>([
 	'logs',
 ]);
 
+/**
+ * Resource folder names owned by Cfx Studio itself. Discovered as normal
+ * entries (so runtime-state updates from log parsing keep working) but
+ * tagged `isInternal: true` and filtered out of `getResources` /
+ * `getResourceByName` by default. The session-scoped client-error bridge
+ * is currently the only one.
+ */
+const INTERNAL_RESOURCE_NAMES = new Set<string>([
+	'cfx-studio-bridge',
+]);
+
 interface DiscoveredEntry {
 	folder: URI;
 	name: string;
 	manifestKind: ManifestKind;
 	runtimeState: RuntimeState;
+	isInternal: boolean;
 }
 
 class ResourceDiscoveryService extends Disposable implements IResourceDiscoveryService {
@@ -79,30 +92,32 @@ class ResourceDiscoveryService extends Disposable implements IResourceDiscoveryS
 		this.refresh();
 	}
 
-	getResources(): readonly IResourceModel[] {
+	getResources(options?: IResourceListOptions): readonly IResourceModel[] {
+		const includeInternal = options?.includeInternal === true;
 		const list: IResourceModel[] = [];
 		for (const entry of this._entries.values()) {
-			list.push({
-				folder: entry.folder,
-				name: entry.name,
-				manifestKind: entry.manifestKind,
-				ensureState: this._ensures.has(entry.name) ? 'in-ensure' : 'not-in-ensure',
-				runtimeState: entry.runtimeState,
-			});
+			if (entry.isInternal && !includeInternal) { continue; }
+			list.push(this.toModel(entry));
 		}
 		list.sort((a, b) => a.name.localeCompare(b.name));
 		return list;
 	}
 
-	getResourceByName(name: string): IResourceModel | undefined {
+	getResourceByName(name: string, options?: IResourceListOptions): IResourceModel | undefined {
 		const entry = this._entries.get(name);
 		if (!entry) { return undefined; }
+		if (entry.isInternal && options?.includeInternal !== true) { return undefined; }
+		return this.toModel(entry);
+	}
+
+	private toModel(entry: DiscoveredEntry): IResourceModel {
 		return {
 			folder: entry.folder,
 			name: entry.name,
 			manifestKind: entry.manifestKind,
 			ensureState: this._ensures.has(entry.name) ? 'in-ensure' : 'not-in-ensure',
 			runtimeState: entry.runtimeState,
+			isInternal: entry.isInternal,
 		};
 	}
 
@@ -214,6 +229,7 @@ class ResourceDiscoveryService extends Disposable implements IResourceDiscoveryS
 						name,
 						manifestKind: m.kind,
 						runtimeState: 'idle',
+						isInternal: INTERNAL_RESOURCE_NAMES.has(name),
 					});
 				}
 				// Don't recurse into a discovered resource — nested resources are not a thing.

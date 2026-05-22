@@ -94,6 +94,15 @@ class CfxMcpBridgeContribution extends Disposable implements IWorkbenchContribut
 			case 'restartResource': {
 				const name = params.name;
 				if (typeof name !== 'string' || !name) { throw new Error('name required'); }
+				// Reject names that aren't part of the discovered (and
+				// non-internal) resource set. Without this guard an MCP
+				// client could target IDE-owned resources by typing
+				// their name verbatim — `cfx-studio-bridge` in
+				// particular. `getResourceByName` filters internals by
+				// default, so the bridge stays out of reach.
+				if (!this.discovery.getResourceByName(name)) {
+					throw new Error(`unknown resource: ${name}`);
+				}
 				await this.fxServer.restartResource(name);
 				return 'ok';
 			}

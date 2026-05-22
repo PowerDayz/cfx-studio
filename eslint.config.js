@@ -1040,6 +1040,22 @@ export default tseslint.config(
 					]
 				},
 				{
+					// Cfx Studio mocha-style integration tests live under
+					// `cfx/test/**` and run via `npm run test-node` against
+					// the compiled `out/` build (mirrors vitest.config.ts
+					// `exclude`). They need the upstream test harness
+					// (`assert`, `vs/base/test/common/utils`) which the
+					// vitest rule below doesn't allow. Must come BEFORE the
+					// vitest rule because the matcher picks the first
+					// target glob that matches.
+					'target': 'src/vs/workbench/contrib/cfx/test/**/*.test.ts',
+					'restrictions': [
+						'vs/workbench/contrib/cfx/**/*',
+						'vs/base/test/**/*',
+						'assert'
+					]
+				},
+				{
 					// Cfx Studio vitest unit tests. Must come BEFORE the
 					// generic contrib/*/~ rule below — the rule matcher
 					// picks the first target glob that matches a file
@@ -1047,10 +1063,14 @@ export default tseslint.config(
 					// The `~` placeholder only gets expanded for targets
 					// ending in `/~`, so we use direct globs here. Tests
 					// can import anything within cfx/ (the production
-					// code they cover) plus the vitest API.
+					// code they cover), base primitives like URI/VSBuffer
+					// (pure utilities, no service deps), plus the vitest
+					// API. Platform/workbench services intentionally NOT
+					// allowed — those need the mocha runner.
 					'target': 'src/vs/workbench/contrib/cfx/**/*.test.ts',
 					'restrictions': [
 						'vs/workbench/contrib/cfx/**/*',
+						'vs/base/**/*',
 						'vitest'
 					]
 				},

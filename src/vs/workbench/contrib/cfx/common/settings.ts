@@ -156,15 +156,6 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 				'Default template selected when invoking the New Resource scaffold. Users can still pick another option in the dialog.',
 			),
 		},
-		'cfx.bridge.autoInstall': {
-			type: 'boolean',
-			default: true,
-			scope: ConfigurationScope.APPLICATION,
-			description: localize(
-				'cfx.bridge.autoInstall.description',
-				'When enabled (default), Cfx Studio offers to install the cfx-studio-bridge resource on first open of a workspace. The bridge forwards client-side Lua errors to the FXServer console so the IDE (and any AI assistant) can see them. Set to false to suppress the prompt globally; the resource can still be installed via the "Cfx: Install Client Error Bridge" command.',
-			),
-		},
 		'cfx.mcp.enabled': {
 			type: 'boolean',
 			default: true,
@@ -176,3 +167,17 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 		},
 	},
 });
+
+// Suppress the upstream Welcome / Getting Started page on most fresh launches.
+// `workbench.startupEditor: 'none'` is the primary gate checked by
+// StartupPageRunnerContribution, but other flows (e.g. first-launch telemetry
+// opt-out, folder walkthrough logic) may still surface Getting Started
+// independently. Pairs with the import removal of welcomeGettingStarted +
+// welcomeWalkthrough in workbench.common.main.ts for full suppression.
+Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerDefaultConfigurations([
+	{
+		overrides: {
+			'workbench.startupEditor': 'none',
+		},
+	},
+]);

@@ -5,6 +5,7 @@
 
 import type { GameMode } from './gameMode.js';
 import type { GraphDiagnostic } from '../_shared/visual/diagnostics.js';
+import type { TrustDiagnostic } from './cfxGraphDiagnostics.js';
 
 /**
  * Host ↔ webview message protocol for the .fxgraph visual editor.
@@ -50,7 +51,18 @@ export type HostToWebviewMessage =
 	 * after every successful codegen so the in-graph preview overlay
 	 * stays in sync. Same `docVersion` race-guard as `diagnostics`.
 	 */
-	| { type: 'lua-preview'; docVersion: number; source: string };
+	| { type: 'lua-preview'; docVersion: number; source: string }
+	/**
+	 * Latest trust-analyzer output for the open document. Sent after
+	 * every save and any time `ICfxGraphDiagnosticsService` emits a
+	 * change for this URI. An empty array means "all previous trust
+	 * diagnostics cleared" — the webview must replace, not merge.
+	 *
+	 * Separate from the codegen `diagnostics` channel above because
+	 * the consumers differ (banner vs. per-node overlay) and the
+	 * shapes differ (`GraphDiagnostic.code` vs. `TrustDiagnostic.ruleId`).
+	 */
+	| { type: 'trust-diagnostics'; diagnostics: ReadonlyArray<TrustDiagnostic> };
 
 /** Sent webview → host. */
 export type WebviewToHostMessage =

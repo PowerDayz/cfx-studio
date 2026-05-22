@@ -298,7 +298,7 @@ import './contrib/relauncher/browser/relauncher.contribution.js';
 // CFX STUDIO REMOVED: import './contrib/remote/browser/remote.contribution.js';
 
 // Emmet
-import './contrib/emmet/browser/emmet.contribution.js';
+// CFX STUDIO REMOVED: import './contrib/emmet/browser/emmet.contribution.js';
 
 // CodeEditor Contributions
 import './contrib/codeEditor/browser/codeEditor.contribution.js';
@@ -332,16 +332,16 @@ import './contrib/themes/browser/themes.contribution.js';
 // CFX STUDIO REMOVED: import './contrib/surveys/browser/languageSurveys.contribution.js';
 
 // Welcome
-import './contrib/welcomeGettingStarted/browser/gettingStarted.contribution.js';
-import './contrib/welcomeWalkthrough/browser/walkThrough.contribution.js';
+// CFX STUDIO REMOVED: import './contrib/welcomeGettingStarted/browser/gettingStarted.contribution.js';
+// CFX STUDIO REMOVED: import './contrib/welcomeWalkthrough/browser/walkThrough.contribution.js';
 import './contrib/welcomeViews/common/viewsWelcome.contribution.js';
-import './contrib/welcomeViews/common/newFile.contribution.js';
+// CFX STUDIO REMOVED: import './contrib/welcomeViews/common/newFile.contribution.js';
 
 // Call Hierarchy
-import './contrib/callHierarchy/browser/callHierarchy.contribution.js';
+// CFX STUDIO REMOVED: import './contrib/callHierarchy/browser/callHierarchy.contribution.js';
 
 // Type Hierarchy
-import './contrib/typeHierarchy/browser/typeHierarchy.contribution.js';
+// CFX STUDIO REMOVED: import './contrib/typeHierarchy/browser/typeHierarchy.contribution.js';
 
 // Outline
 import './contrib/codeEditor/browser/outline/documentSymbolsOutline.js';

@@ -39,16 +39,29 @@ export interface IResourceModel {
 	readonly ensureState: EnsureState;
 	/** FXServer-reported state. Defaults to 'idle' until Phase C wires it. */
 	readonly runtimeState: RuntimeState;
+	/**
+	 * True for resources owned by Cfx Studio itself (currently just the
+	 * session-scoped `cfx-studio-bridge`). These are excluded from
+	 * `getResources()` / `getResourceByName()` by default so the tree
+	 * view, MCP bridge, tab decoration, and auto-restart all skip them.
+	 * Opt in via `{ includeInternal: true }`.
+	 */
+	readonly isInternal: boolean;
+}
+
+export interface IResourceListOptions {
+	/** When true, include resources flagged `isInternal: true` (e.g. the bridge). */
+	readonly includeInternal?: boolean;
 }
 
 export interface IResourceDiscoveryService {
 	readonly _serviceBrand: undefined;
 
 	/** Snapshot of currently-known resources. Cached in memory. */
-	getResources(): readonly IResourceModel[];
+	getResources(options?: IResourceListOptions): readonly IResourceModel[];
 
 	/** Look up by folder name (the `ensure <name>` token). */
-	getResourceByName(name: string): IResourceModel | undefined;
+	getResourceByName(name: string, options?: IResourceListOptions): IResourceModel | undefined;
 
 	/** Fires whenever the discovered set changes (file create/delete, ensure-chain change, runtime state). */
 	readonly onDidChangeResources: Event<void>;

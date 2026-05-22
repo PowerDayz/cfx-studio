@@ -38,8 +38,13 @@ registerStatusBarContribution();
 import { registerCfxTabDecoration } from './status/cfxTabDecoration.js';
 registerCfxTabDecoration();
 
-import { registerCfxBridgeInstaller } from './bridge/cfxStudioBridgeInstaller.js';
-registerCfxBridgeInstaller();
+// Side-effect import + explicit register: the module registers the
+// IEphemeralBridgeService singleton at load (session-scoped client-error
+// bridge). `registerEphemeralBridge()` additionally registers the
+// one-time migration workbench contribution that detects a legacy
+// `ensure cfx-studio-bridge` in server.cfg and offers to remove it.
+import { registerEphemeralBridge } from './bridge/ephemeralBridgeService.js';
+registerEphemeralBridge();
 
 import { registerCfxMcpBridge } from './mcpBridge/cfxMcpBridgeContribution.js';
 registerCfxMcpBridge();
@@ -75,6 +80,11 @@ import './natives/nativesViewContainer.js';
 // as Cfx visual graphs.
 import { registerFxGraphEditor } from './graph/fxgraphEditorContribution.js';
 registerFxGraphEditor();
+
+// Side-effect import: registers ICfxGraphDiagnosticsService. The
+// editor pane publishes analyzer output here after each save; the
+// service forwards changes to any open webview for the same URI.
+import './graph/cfxGraphDiagnosticsService.js';
 
 // Cross-cutting Cfx commands (Phase G). Locate exe, download artifacts,
 // natives reference, debug print. Most other commands ship with their

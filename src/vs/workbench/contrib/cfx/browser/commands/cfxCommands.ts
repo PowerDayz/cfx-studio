@@ -13,7 +13,8 @@ import { GameMode, IGameModeService } from '../../common/gameMode.js';
 import { IResourceDiscoveryService } from '../../common/resources.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { runArtifactDownload } from '../server/artifactsPicker.js';
-import { CFX_NATIVES_CONTAINER_ID } from '../natives/nativesViewContainer.js';
+
+const CFX_NATIVES_VIEW_ID = 'cfx.view.natives';
 
 const CATEGORY = localize2('cfx.category', 'Cfx Studio');
 
@@ -74,7 +75,7 @@ class ShowNativesReferenceAction extends Action2 {
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const viewsService = accessor.get(IViewsService);
-		await viewsService.openViewContainer(CFX_NATIVES_CONTAINER_ID, true);
+		await viewsService.openView(CFX_NATIVES_VIEW_ID, true);
 	}
 }
 
