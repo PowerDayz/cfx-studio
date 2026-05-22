@@ -35,6 +35,12 @@ src/vs/workbench/contrib/cfx/browser/graph/media/
 src/vs/workbench/contrib/cfx/browser/graph/webview/package-lock.json
 src/vs/workbench/contrib/cfx/browser/graph/webview/node_modules/
 
+# Output of build-agent-webview — Vite bundle for the Cfx Agent panel.
+# Source under .../agent/webview/src/ stays tracked.
+src/vs/workbench/contrib/cfx/browser/agent/media/
+src/vs/workbench/contrib/cfx/browser/agent/webview/package-lock.json
+src/vs/workbench/contrib/cfx/browser/agent/webview/node_modules/
+
 # cfx-mcp standalone binary build output. The bundled natives JSON
 # (cfx-mcp/data/natives-*.json) IS tracked so a fresh clone has a
 # working offline binary without needing cfx:fetch-natives first.

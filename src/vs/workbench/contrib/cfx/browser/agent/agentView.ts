@@ -21,24 +21,32 @@ import { IKeybindingService } from '../../../../../platform/keybinding/common/ke
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
+import { ISecretStorageService } from '../../../../../platform/secrets/common/secrets.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { IViewletViewOptions } from '../../../../browser/parts/views/viewsViewlet.js';
 import { ViewPane } from '../../../../browser/parts/views/viewPane.js';
 import { IViewDescriptorService } from '../../../../common/views.js';
+import { ILanguageModelsService } from '../../../chat/common/languageModels.js';
 import { IWebviewElement, IWebviewService } from '../../../webview/browser/webview.js';
 import { asWebviewUri, webviewGenericCspSource } from '../../../webview/common/webview.js';
 import {
 	AgentEvent,
 	AgentMessage,
 	AssistantMessage,
-	IAgentProvider,
 	IAgentService,
 	ToolCall,
 	UserMessage,
 } from '../../common/agent.js';
+import { ANTHROPIC_API_KEY_SECRET, ANTHROPIC_VENDOR } from './anthropicProvider.js';
+import { OPENAI_API_KEY_SECRET, OPENAI_VENDOR } from './openaiProvider.js';
+import { CODEX_SUBSCRIPTION_PREFIX } from './codexSubscriptionProvider.js';
+import { promptForApiKey } from './apiKeyPrompt.js';
 
 const MEDIA_DIR_REL = 'vs/workbench/contrib/cfx/browser/agent/media/agent';
+const STORAGE_SELECTED_MODEL_KEY = 'cfx.agent.selectedModel';
+const STORAGE_TOOLS_ENABLED_KEY = 'cfx.agent.toolsEnabled';
 
 interface MessageRecord {
 	readonly id: string;
@@ -49,33 +57,53 @@ interface MessageRecord {
 	readonly isError?: boolean;
 }
 
+interface ModelDescriptor {
+	readonly id: string;
+	readonly displayName: string;
+	readonly vendor: string;
+	readonly family: string;
+	readonly hasAuth: boolean;
+}
+
 type RunState = 'idle' | 'awaiting_model' | 'running_tool' | 'errored';
 
 type HostToWebviewMessage =
-	| { readonly kind: 'reset'; readonly messages: MessageRecord[]; readonly state: RunState; readonly ready: boolean; readonly encryptionAvailable: boolean }
+	| {
+		readonly kind: 'reset';
+		readonly messages: MessageRecord[];
+		readonly state: RunState;
+		readonly models: ModelDescriptor[];
+		readonly selectedModelId: string | undefined;
+		readonly toolsEnabled: boolean;
+		readonly encryptionAvailable: boolean;
+	}
 	| { readonly kind: 'state'; readonly state: RunState }
 	| { readonly kind: 'append_message'; readonly message: MessageRecord }
 	| { readonly kind: 'append_token'; readonly messageId: string; readonly text: string }
 	| { readonly kind: 'tool_settled'; readonly messageId: string; readonly redactionCount: number; readonly isError: boolean }
 	| { readonly kind: 'error'; readonly message: string }
-	| { readonly kind: 'ready_changed'; readonly ready: boolean; readonly encryptionAvailable: boolean };
+	| { readonly kind: 'models_changed'; readonly models: ModelDescriptor[]; readonly selectedModelId: string | undefined };
 
 type WebviewToHostMessage =
 	| { readonly kind: 'submit'; readonly text: string }
 	| { readonly kind: 'clear' }
-	| { readonly kind: 'cancel' };
+	| { readonly kind: 'cancel' }
+	| { readonly kind: 'select_model'; readonly modelId: string }
+	| { readonly kind: 'set_tools_enabled'; readonly enabled: boolean }
+	| { readonly kind: 'set_api_key'; readonly vendor: string };
 
 /**
- * Activity-bar view for the built-in Cfx Agent panel. Hosts a Vite-
- * built React webview (under `media/agent/`) that talks to
- * `IAgentService` via postMessage. The view is responsible for:
+ * Activity-bar view for the built-in Cfx Agent panel. Hosts a Vite-built
+ * React webview (under `media/agent/`) that talks to `IAgentService` via
+ * postMessage. The view is responsible for:
  *
  *   - Creating + mounting the IWebviewElement and feeding it the
  *     correct HTML+CSP shell.
+ *   - Listing models from `ILanguageModelsService` and pushing them
+ *     to the picker, plus refreshing on registration changes.
+ *   - Persisting the user's model + tools-toggle choice per workspace.
  *   - Translating `AgentEvent` (workbench-internal) into
  *     `HostToWebviewMessage` (post-message shape).
- *   - Tracking the in-flight assistant message ID so streamed tokens
- *     append to the right record.
  *   - Cancelling in-flight turns when the user sends a Cancel.
  */
 export class AgentViewPane extends ViewPane {
@@ -86,17 +114,19 @@ export class AgentViewPane extends ViewPane {
 	private webview: IWebviewElement | undefined;
 	private readonly webviewSubs = this._register(new DisposableStore());
 
-	// Per-turn streaming state.
 	private currentAssistantMessageId: string | undefined;
 	private currentAssistantText = '';
-	private currentToolCallMessages = new Map<string, string>(); // tool_use id -> visual record id
+	private currentToolCallMessages = new Map<string, string>();
 	private currentTurnCancel: CancellationTokenSource | undefined;
+
+	private selectedModelId: string | undefined;
+	private toolsEnabled: boolean;
 
 	constructor(
 		options: IViewletViewOptions,
 		@IThemeService themeService: IThemeService,
 		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
-		@IInstantiationService instantiationService: IInstantiationService,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IKeybindingService keybindingService: IKeybindingService,
 		@IContextMenuService contextMenuService: IContextMenuService,
 		@IConfigurationService configurationService: IConfigurationService,
@@ -106,12 +136,22 @@ export class AgentViewPane extends ViewPane {
 		@IHoverService hoverService: IHoverService,
 		@IWebviewService private readonly webviewService: IWebviewService,
 		@IAgentService private readonly agentService: IAgentService,
-		@IAgentProvider private readonly agentProvider: IAgentProvider,
+		@ILanguageModelsService private readonly languageModels: ILanguageModelsService,
+		@ISecretStorageService private readonly secretStorage: ISecretStorageService,
+		@IStorageService private readonly storageService: IStorageService,
 		@ILogService private readonly logService: ILogService,
 		@INotificationService private readonly notificationService: INotificationService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, telemetryService, hoverService);
+		this.selectedModelId = this.storageService.get(STORAGE_SELECTED_MODEL_KEY, StorageScope.WORKSPACE);
+		this.toolsEnabled = this.storageService.getBoolean(STORAGE_TOOLS_ENABLED_KEY, StorageScope.WORKSPACE, true);
 		this._register(this.agentService.onDidEvent((evt) => this.onAgentEvent(evt)));
+		this._register(this.languageModels.onDidChangeLanguageModels(() => { void this.refreshModels(); }));
+		this._register(this.secretStorage.onDidChangeSecret((key) => {
+			if (key === ANTHROPIC_API_KEY_SECRET || key === OPENAI_API_KEY_SECRET) {
+				void this.refreshModels();
+			}
+		}));
 	}
 
 	protected override renderBody(parent: HTMLElement): void {
@@ -123,7 +163,6 @@ export class AgentViewPane extends ViewPane {
 		this.container.style.flexDirection = 'column';
 
 		this.ensureWebview();
-		void this.refreshReadyState();
 	}
 
 	override focus(): void {
@@ -172,28 +211,106 @@ export class AgentViewPane extends ViewPane {
 		const bundleCssUri = asWebviewUri(joinPath(mediaRoot, 'bundle.css'));
 		webview.setHtml(renderShellHtml({ bundleJsUri: bundleJsUri.toString(), bundleCssUri: bundleCssUri.toString() }));
 
-		// Push the initial state once the bundle has loaded. The webview
-		// is responsible for sending a 'ready' message... actually we
-		// just push current state on a short delay. The reducer in App.tsx
-		// handles late-arriving resets harmlessly.
-		setTimeout(() => this.pushReset(), 100);
+		// Push the initial state once the bundle has loaded. The reducer
+		// in App.tsx handles late-arriving resets harmlessly.
+		setTimeout(() => { void this.pushReset(); }, 100);
 	}
 
-	private async refreshReadyState(): Promise<void> {
-		const status = await this.agentProvider.isReady();
-		this.post({ kind: 'ready_changed', ready: status.ready, encryptionAvailable: status.encryptionAvailable });
+	private async listModels(): Promise<{ models: ModelDescriptor[]; encryptionAvailable: boolean }> {
+		const ids = this.languageModels.getLanguageModelIds();
+		const out: ModelDescriptor[] = [];
+		// API-key vendors are cached so we don't ask SecretStorage once per
+		// model. Subscription / extension-owned models bypass the cache —
+		// their auth state isn't a single secret-storage key.
+		const apiKeyAuthCache = new Map<string, boolean>();
+		const lookupApiKeyAuth = async (secretKey: string) => {
+			const cached = apiKeyAuthCache.get(secretKey);
+			if (cached !== undefined) { return cached; }
+			const hasAuth = Boolean(await this.secretStorage.get(secretKey));
+			apiKeyAuthCache.set(secretKey, hasAuth);
+			return hasAuth;
+		};
+		for (const id of ids) {
+			const meta = this.languageModels.lookupLanguageModel(id);
+			if (!meta) { continue; }
+			let hasAuth: boolean;
+			if (id.startsWith(CODEX_SUBSCRIPTION_PREFIX)) {
+				// Subscription-via-codex: codex owns auth (~/.codex/auth.json
+				// after the user runs `codex login`). We assume the CLI is
+				// authed when present — the contribution only registered the
+				// model after detecting `codex` on PATH. A stale/expired
+				// login surfaces as a runtime error in the panel.
+				hasAuth = true;
+			} else if (meta.vendor === ANTHROPIC_VENDOR) {
+				hasAuth = await lookupApiKeyAuth(ANTHROPIC_API_KEY_SECRET);
+			} else if (meta.vendor === OPENAI_VENDOR) {
+				hasAuth = await lookupApiKeyAuth(OPENAI_API_KEY_SECRET);
+			} else {
+				// Extension-owned vendors (e.g. Copilot if installed) handle
+				// auth out-of-band; assume OK and let the provider error
+				// loudly on first call if not.
+				hasAuth = true;
+			}
+			out.push({
+				id: meta.id,
+				displayName: meta.name,
+				vendor: meta.vendor,
+				family: meta.family,
+				hasAuth,
+			});
+		}
+		return { models: out, encryptionAvailable: this.secretStorage.type === 'persisted' };
 	}
 
-	private pushReset(): void {
+	private resolveSelectedModelId(models: ModelDescriptor[]): string | undefined {
+		// Honor user's persisted choice if it still exists.
+		if (this.selectedModelId && models.some((m) => m.id === this.selectedModelId)) {
+			return this.selectedModelId;
+		}
+		// Otherwise: default-flagged model if any, else first authed model,
+		// else first model overall (the empty-state will prompt for a key).
+		for (const id of this.languageModels.getLanguageModelIds()) {
+			const meta = this.languageModels.lookupLanguageModel(id);
+			if (meta?.isDefault && models.some((m) => m.id === id)) {
+				return id;
+			}
+		}
+		const firstAuthed = models.find((m) => m.hasAuth);
+		if (firstAuthed) { return firstAuthed.id; }
+		return models[0]?.id;
+	}
+
+	private async pushReset(): Promise<void> {
+		const { models, encryptionAvailable } = await this.listModels();
+		const selectedModelId = this.resolveSelectedModelId(models);
+		if (selectedModelId !== this.selectedModelId) {
+			this.selectedModelId = selectedModelId;
+			if (selectedModelId) {
+				this.storageService.store(STORAGE_SELECTED_MODEL_KEY, selectedModelId, StorageScope.WORKSPACE, StorageTarget.USER);
+			}
+		}
 		const messages = this.serializeMessages(this.agentService.messages);
 		this.post({
 			kind: 'reset',
 			messages,
 			state: this.agentService.state,
-			ready: false, // refreshReadyState will update this asynchronously
-			encryptionAvailable: true,
+			models,
+			selectedModelId,
+			toolsEnabled: this.toolsEnabled,
+			encryptionAvailable,
 		});
-		void this.refreshReadyState();
+	}
+
+	private async refreshModels(): Promise<void> {
+		const { models } = await this.listModels();
+		const selectedModelId = this.resolveSelectedModelId(models);
+		if (selectedModelId !== this.selectedModelId) {
+			this.selectedModelId = selectedModelId;
+			if (selectedModelId) {
+				this.storageService.store(STORAGE_SELECTED_MODEL_KEY, selectedModelId, StorageScope.WORKSPACE, StorageTarget.USER);
+			}
+		}
+		this.post({ kind: 'models_changed', models, selectedModelId });
 	}
 
 	private serializeMessages(messages: ReadonlyArray<AgentMessage>): MessageRecord[] {
@@ -233,8 +350,6 @@ export class AgentViewPane extends ViewPane {
 		switch (evt.kind) {
 			case 'state':
 				if (evt.state === 'awaiting_model') {
-					// New assistant turn starts — allocate a record so streamed
-					// tokens have somewhere to append.
 					this.currentAssistantMessageId = `a-${generateUuid()}`;
 					this.currentAssistantText = '';
 					this.post({
@@ -257,9 +372,6 @@ export class AgentViewPane extends ViewPane {
 				}
 				break;
 			case 'assistant_message':
-				// The orchestrator finished the assistant turn. The streamed
-				// text already arrived via 'token' events; we only need to
-				// surface the tool calls (which arrive after the text).
 				for (const call of evt.message.toolCalls) {
 					const id = `c-${call.id}`;
 					this.currentToolCallMessages.set(call.id, id);
@@ -272,8 +384,7 @@ export class AgentViewPane extends ViewPane {
 				this.currentAssistantText = '';
 				break;
 			case 'tool_call_started':
-				// Already surfaced by assistant_message — no-op here. The
-				// state pill flips to running_tool through the 'state' event.
+				// Already surfaced by assistant_message — no-op here.
 				break;
 			case 'tool_call_settled': {
 				const callMsgId = this.currentToolCallMessages.get(evt.callId);
@@ -338,20 +449,47 @@ export class AgentViewPane extends ViewPane {
 			case 'clear':
 				this.currentTurnCancel?.cancel();
 				this.agentService.clear();
-				this.pushReset();
+				void this.pushReset();
 				break;
 			case 'cancel':
 				this.currentTurnCancel?.cancel();
 				break;
+			case 'select_model':
+				this.selectedModelId = msg.modelId;
+				this.storageService.store(STORAGE_SELECTED_MODEL_KEY, msg.modelId, StorageScope.WORKSPACE, StorageTarget.USER);
+				void this.refreshModels();
+				break;
+			case 'set_tools_enabled':
+				this.toolsEnabled = msg.enabled;
+				this.storageService.store(STORAGE_TOOLS_ENABLED_KEY, msg.enabled, StorageScope.WORKSPACE, StorageTarget.USER);
+				break;
+			case 'set_api_key':
+				void this.runSetApiKey(msg.vendor);
+				break;
+		}
+	}
+
+	private async runSetApiKey(vendor: string): Promise<void> {
+		const ok = await promptForApiKey(this.instantiationService, vendor);
+		if (ok) {
+			// onDidChangeSecret will fire refreshModels(), but the
+			// secret-storage event arrives asynchronously and the user is
+			// looking at the panel right now — refresh proactively so the
+			// "needs key" state clears immediately.
+			void this.refreshModels();
 		}
 	}
 
 	private async submit(text: string): Promise<void> {
+		if (!this.selectedModelId) {
+			this.notificationService.error(localize('cfx.agent.noModel', 'Cfx Agent: no model selected.'));
+			return;
+		}
 		this.currentTurnCancel?.cancel();
 		const cancel = new CancellationTokenSource();
 		this.currentTurnCancel = cancel;
 		try {
-			await this.agentService.send(text, cancel.token);
+			await this.agentService.send(text, { modelId: this.selectedModelId, toolsEnabled: this.toolsEnabled }, cancel.token);
 		} catch (err) {
 			this.logService.error('[cfx.agent] send failed', err);
 			this.notificationService.error(localize('cfx.agent.sendFailed', 'Cfx Agent: {0}', String((err as Error)?.message ?? err)));
@@ -373,11 +511,10 @@ function stringifyToolInput(call: ToolCall): string {
 }
 
 function renderShellHtml(opts: { bundleJsUri: string; bundleCssUri: string }): string {
-	// The shell only loads bundle.js as an external module script and
-	// has no inline <script>, so 'unsafe-inline' is omitted from
-	// script-src to tighten the webview's attack surface. style-src
-	// keeps 'unsafe-inline' because the bundled CSS-in-JS layer emits
-	// runtime <style> tags.
+	// The shell only loads bundle.js as an external module script and has
+	// no inline <script>, so 'unsafe-inline' is omitted from script-src to
+	// tighten the webview's attack surface. style-src keeps 'unsafe-inline'
+	// because the bundled CSS-in-JS layer emits runtime <style> tags.
 	const csp = [
 		`default-src 'none'`,
 		`script-src ${webviewGenericCspSource}`,

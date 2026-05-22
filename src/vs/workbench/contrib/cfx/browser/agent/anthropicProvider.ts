@@ -4,26 +4,34 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
-import { Emitter } from '../../../../../base/common/event.js';
+import { AsyncIterableSource, DeferredPromise } from '../../../../../base/common/async.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { localize } from '../../../../../nls.js';
+import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { ISecretStorageService } from '../../../../../platform/secrets/common/secrets.js';
-import { InstantiationType, registerSingleton } from '../../../../../platform/instantiation/common/extensions.js';
+import { Registry } from '../../../../../platform/registry/common/platform.js';
 import {
-	AgentMessage,
-	AssistantMessage,
-	CompleteRequest,
-	IAgentCompletion,
-	IAgentProvider,
-	ProviderEvent,
-	ProviderTool,
-	ToolCall,
-	ToolResultMessage,
-	UserMessage,
-} from '../../common/agent.js';
+	Extensions as WorkbenchExtensions,
+	IWorkbenchContribution,
+	IWorkbenchContributionsRegistry,
+} from '../../../../common/contributions.js';
+import { LifecyclePhase } from '../../../../services/lifecycle/common/lifecycle.js';
+import {
+	ChatMessageRole,
+	IChatMessage,
+	IChatMessagePart,
+	IChatResponseFragment,
+	IChatResponseToolUsePart,
+	ILanguageModelChat,
+	ILanguageModelChatMetadata,
+	ILanguageModelChatResponse,
+	ILanguageModelsService,
+} from '../../../chat/common/languageModels.js';
 
 /**
- * Anthropic Messages API provider.
+ * Anthropic Messages API provider, registered with ILanguageModelsService
+ * so the Cfx Agent panel and any vscode.lm.* consumer can target it.
  *
  * Lives in the renderer because the workbench CSP (workbench.html
  * line 36-40) allows `connect-src https:` — no main-process IPC hop
@@ -43,73 +51,128 @@ const DEFAULT_MAX_TOKENS = 4096;
 
 export { SECRET_KEY as ANTHROPIC_API_KEY_SECRET };
 
-class AnthropicProvider extends Disposable implements IAgentProvider {
-	declare readonly _serviceBrand: undefined;
+export const ANTHROPIC_VENDOR = 'cfx.anthropic';
+export const CFX_EXTENSION_ID = new ExtensionIdentifier('cfx.studio');
 
+/**
+ * Models we register with ILanguageModelsService. Kept in sync with
+ * Anthropic's released model IDs; the IDE picks the family + version
+ * from these entries, the user picks one in the panel.
+ *
+ * `maxInputTokens` / `maxOutputTokens` are Anthropic's per-model limits
+ * as of model release; consumers use them for token-budget displays
+ * and (in the panel) to disable Send when prompt+history exceeds input.
+ */
+export interface AnthropicModelDescriptor {
+	readonly modelId: string;         // Anthropic API model identifier
+	readonly displayName: string;     // Shown in the picker
+	readonly maxInputTokens: number;
+	readonly maxOutputTokens: number;
+	readonly isDefault?: boolean;
+}
+
+export const ANTHROPIC_MODELS: ReadonlyArray<AnthropicModelDescriptor> = [
+	{
+		modelId: 'claude-opus-4-7',
+		displayName: 'Claude Opus 4.7',
+		maxInputTokens: 200_000,
+		maxOutputTokens: 8_192,
+		isDefault: true,
+	},
+	{
+		modelId: 'claude-sonnet-4-6',
+		displayName: 'Claude Sonnet 4.6',
+		maxInputTokens: 200_000,
+		maxOutputTokens: 8_192,
+	},
+	{
+		modelId: 'claude-haiku-4-5-20251001',
+		displayName: 'Claude Haiku 4.5',
+		maxInputTokens: 200_000,
+		maxOutputTokens: 8_192,
+	},
+];
+
+/** Identifier shape used everywhere ILanguageModelsService is queried. */
+export function anthropicLmId(modelId: string): string {
+	return `${ANTHROPIC_VENDOR}/${modelId}`;
+}
+
+class AnthropicChatProvider implements ILanguageModelChat {
 	constructor(
-		@ISecretStorageService private readonly secretStorage: ISecretStorageService,
-		@ILogService private readonly logService: ILogService,
-	) {
-		super();
-	}
+		readonly metadata: ILanguageModelChatMetadata,
+		private readonly modelId: string,
+		private readonly secretStorage: ISecretStorageService,
+		private readonly logService: ILogService,
+	) { }
 
-	async isReady(): Promise<{ ready: boolean; encryptionAvailable: boolean }> {
-		const key = await this.secretStorage.get(SECRET_KEY);
-		const encryptionAvailable = this.secretStorage.type === 'persisted';
-		return { ready: !!key, encryptionAvailable };
-	}
+	async sendChatRequest(
+		messages: IChatMessage[],
+		_from: ExtensionIdentifier,
+		options: { [name: string]: unknown },
+		token: CancellationToken,
+	): Promise<ILanguageModelChatResponse> {
+		const result = new DeferredPromise<unknown>();
+		const stream = new AsyncIterableSource<IChatResponseFragment>();
 
-	complete(req: CompleteRequest, token: CancellationToken): IAgentCompletion {
-		const onEvent = new Emitter<ProviderEvent>();
 		const controller = new AbortController();
-
 		const cancelSub = token.onCancellationRequested(() => controller.abort());
 
-		const completion: IAgentCompletion = {
-			onEvent: onEvent.event,
-			dispose: () => {
-				controller.abort();
-				cancelSub.dispose();
-				onEvent.dispose();
-			},
-		};
+		// Fire-and-forget the request loop; surface errors via result + stream.
+		void this.runStream(messages, options, controller.signal, stream)
+			.then(() => {
+				stream.resolve();
+				result.complete(undefined);
+			})
+			.catch((err) => {
+				if (controller.signal.aborted) {
+					// Caller-initiated cancel: close the stream cleanly so
+					// the consumer's `for await` exits without throwing.
+					stream.resolve();
+					result.complete(undefined);
+					return;
+				}
+				this.logService.error('[cfx.agent.anthropic] request failed', err);
+				stream.reject(err);
+				result.error(err);
+			})
+			.finally(() => cancelSub.dispose());
 
-		// Fire-and-forget the request loop. All emit calls happen inside
-		// runStream(); errors are caught and emitted as 'error' events so
-		// the caller never sees an unhandled rejection.
-		void this.runStream(req, controller.signal, onEvent).catch((err) => {
-			if (controller.signal.aborted) {
-				// Caller-initiated cancel: still emit a terminal event so
-				// AgentService.runTurn unblocks. Using message_end with an
-				// 'unknown' stopReason avoids surfacing the abort as a
-				// model error in the transcript; the orchestrator checks
-				// the cancellation token after the turn resolves.
-				onEvent.fire({ kind: 'message_end', stopReason: 'unknown' });
-				return;
-			}
-			const message = err instanceof Error ? err.message : String(err);
-			this.logService.error('[cfx.agent] provider error', err);
-			onEvent.fire({ kind: 'error', message });
-		}).finally(() => {
-			cancelSub.dispose();
-		});
-
-		return completion;
+		return { stream: stream.asyncIterable, result: result.p };
 	}
 
-	private async runStream(req: CompleteRequest, signal: AbortSignal, onEvent: Emitter<ProviderEvent>): Promise<void> {
+	async provideTokenCount(message: string | IChatMessage, _token: CancellationToken): Promise<number> {
+		// Anthropic exposes /v1/messages/count_tokens for exact counts but
+		// every request is an HTTPS round-trip. The renderer-side UX wants
+		// fast estimates for the "X / 200k" display, so we use a 4-chars-per-
+		// token heuristic. Off by ~20% on average; not used for billing.
+		const text = typeof message === 'string'
+			? message
+			: messageContentText(message);
+		return Math.ceil(text.length / 4);
+	}
+
+	private async runStream(
+		messages: IChatMessage[],
+		options: { [name: string]: unknown },
+		signal: AbortSignal,
+		stream: AsyncIterableSource<IChatResponseFragment>,
+	): Promise<void> {
 		const apiKey = await this.secretStorage.get(SECRET_KEY);
 		if (!apiKey) {
-			onEvent.fire({ kind: 'error', message: 'No Anthropic API key configured. Run "Cfx: Set Agent API Key" to set one.' });
-			return;
+			throw new Error('No Anthropic API key configured. Run "Cfx: Set Agent API Key" to set one.');
 		}
 
+		const { systemPrompt, anthropicMessages } = splitSystemAndMessages(messages);
+		const tools = Array.isArray(options['tools']) ? (options['tools'] as Array<{ name: string; description: string; inputSchema: object }>) : [];
+		const maxTokens = typeof options['maxTokens'] === 'number' ? options['maxTokens'] as number : DEFAULT_MAX_TOKENS;
+
 		const body = JSON.stringify({
-			model: req.model,
-			max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-			system: req.systemPrompt,
-			messages: toAnthropicMessages(req.messages),
-			tools: req.tools.map(toAnthropicTool),
+			model: this.modelId,
+			max_tokens: maxTokens,
+			system: systemPrompt,
+			messages: anthropicMessages,
+			tools: tools.map(toAnthropicTool),
 			stream: true,
 		});
 
@@ -128,12 +191,116 @@ class AnthropicProvider extends Disposable implements IAgentProvider {
 		if (!response.ok || !response.body) {
 			const text = await response.text().catch(() => '');
 			const trimmed = text.slice(0, 500);
-			onEvent.fire({ kind: 'error', message: `Anthropic API ${response.status}: ${trimmed || response.statusText}` });
-			return;
+			throw new Error(`Anthropic API ${response.status}: ${trimmed || response.statusText}`);
 		}
 
-		await parseSseStream(response.body, signal, onEvent);
+		await parseSseStream(response.body, signal, stream);
 	}
+}
+
+class AnthropicProviderContribution extends Disposable implements IWorkbenchContribution {
+	constructor(
+		@ILanguageModelsService languageModels: ILanguageModelsService,
+		@ISecretStorageService secretStorage: ISecretStorageService,
+		@ILogService logService: ILogService,
+	) {
+		super();
+		for (const model of ANTHROPIC_MODELS) {
+			const identifier = anthropicLmId(model.modelId);
+			const metadata: ILanguageModelChatMetadata = {
+				extension: CFX_EXTENSION_ID,
+				name: model.displayName,
+				id: identifier,
+				vendor: ANTHROPIC_VENDOR,
+				version: '1',
+				family: 'claude',
+				maxInputTokens: model.maxInputTokens,
+				maxOutputTokens: model.maxOutputTokens,
+				isDefault: model.isDefault,
+				isUserSelectable: true,
+				auth: {
+					providerLabel: localize('cfx.anthropic.auth.label', 'Anthropic API Key'),
+				},
+			};
+			const provider = new AnthropicChatProvider(metadata, model.modelId, secretStorage, logService);
+			this._register(languageModels.registerLanguageModelChat(identifier, provider));
+		}
+	}
+}
+
+Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench).registerWorkbenchContribution(
+	AnthropicProviderContribution,
+	LifecyclePhase.Restored,
+);
+
+// ---- IChatMessage[] → Anthropic API shape ----
+
+export function splitSystemAndMessages(messages: IChatMessage[]): { systemPrompt: string; anthropicMessages: Array<object> } {
+	// Anthropic puts the system prompt in a top-level `system` field, not
+	// inline as a system-role message. Concatenate any System-role messages
+	// (in order) and emit the rest as user/assistant turns.
+	const systemParts: string[] = [];
+	const anthropicMessages: Array<object> = [];
+	for (const m of messages) {
+		if (m.role === ChatMessageRole.System) {
+			systemParts.push(messageContentText(m));
+			continue;
+		}
+		anthropicMessages.push(toAnthropicMessage(m));
+	}
+	return {
+		systemPrompt: systemParts.join('\n\n'),
+		anthropicMessages,
+	};
+}
+
+function toAnthropicMessage(m: IChatMessage): object {
+	const role = m.role === ChatMessageRole.User ? 'user' : 'assistant';
+	// Anthropic's content array shape: text blocks, tool_use blocks
+	// (assistant), tool_result blocks (user). Our IChatMessagePart maps
+	// directly with rename: type 'text' stays, 'tool_use' stays (we already
+	// match Anthropic's naming), 'tool_result' stays.
+	const content = m.content.map((part) => toAnthropicPart(part));
+	return { role, content };
+}
+
+function toAnthropicPart(part: IChatMessagePart): object {
+	switch (part.type) {
+		case 'text':
+			return { type: 'text', text: part.value };
+		case 'tool_use':
+			return { type: 'tool_use', id: part.toolCallId, name: part.name, input: part.parameters };
+		case 'tool_result': {
+			// IChatMessageToolResultPart.value is an array of response parts;
+			// Anthropic accepts a string or an array. Flatten text parts.
+			const flat = part.value
+				.filter((v): v is { type: 'text'; value: string } => v.type === 'text')
+				.map((v) => v.value)
+				.join('');
+			return {
+				type: 'tool_result',
+				tool_use_id: part.toolCallId,
+				content: flat,
+				...(part.isError ? { is_error: true } : {}),
+			};
+		}
+	}
+}
+
+function toAnthropicTool(tool: { name: string; description: string; inputSchema: object }): object {
+	return {
+		name: tool.name,
+		description: tool.description,
+		input_schema: tool.inputSchema,
+	};
+}
+
+function messageContentText(m: IChatMessage): string {
+	const buf: string[] = [];
+	for (const part of m.content) {
+		if (part.type === 'text') { buf.push(part.value); }
+	}
+	return buf.join('');
 }
 
 // ---- SSE parsing ----
@@ -155,12 +322,11 @@ export interface BlockState {
 async function parseSseStream(
 	body: ReadableStream<Uint8Array>,
 	signal: AbortSignal,
-	onEvent: Emitter<ProviderEvent>,
+	stream: AsyncIterableSource<IChatResponseFragment>,
 ): Promise<void> {
 	const reader = body.getReader();
 	const decoder = new TextDecoder('utf-8');
 	const blocks = new Map<number, BlockState>();
-	let stopReason: 'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence' | 'unknown' = 'unknown';
 	let pending = '';
 
 	try {
@@ -179,7 +345,7 @@ async function parseSseStream(
 				const dataLine = eventBlock.split('\n').find((l) => l.startsWith('data:'));
 				if (dataLine) {
 					const json = dataLine.slice(5).trim();
-					handleSseEvent(json, blocks, onEvent, (reason) => { stopReason = reason; });
+					handleSseEvent(json, blocks, stream);
 				}
 				separator = pending.indexOf('\n\n');
 			}
@@ -189,18 +355,14 @@ async function parseSseStream(
 	}
 
 	if (signal.aborted) {
-		// Surface as a rejection so runStream's caller catch handles the
-		// terminal event uniformly with mid-stream abort.
 		throw new DOMException('Aborted', 'AbortError');
 	}
-	onEvent.fire({ kind: 'message_end', stopReason });
 }
 
 export function handleSseEvent(
 	json: string,
 	blocks: Map<number, BlockState>,
-	onEvent: Emitter<ProviderEvent>,
-	setStopReason: (r: 'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence' | 'unknown') => void,
+	stream: AsyncIterableSource<IChatResponseFragment>,
 ): void {
 	let evt: { type?: string; index?: number; delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string }; content_block?: { type?: string; id?: string; name?: string } };
 	try {
@@ -227,7 +389,7 @@ export function handleSseEvent(
 			const delta = evt.delta ?? {};
 			if (block.type === 'text' && delta.type === 'text_delta' && typeof delta.text === 'string') {
 				block.textBuffer = (block.textBuffer ?? '') + delta.text;
-				onEvent.fire({ kind: 'token', text: delta.text });
+				stream.emitOne({ index: idx, part: { type: 'text', value: delta.text } });
 			} else if (block.type === 'tool_use' && delta.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
 				block.jsonBuffer = (block.jsonBuffer ?? '') + delta.partial_json;
 			}
@@ -238,72 +400,24 @@ export function handleSseEvent(
 			const block = blocks.get(idx);
 			if (!block) { return; }
 			if (block.type === 'tool_use' && block.toolId && block.toolName) {
-				let input: unknown = {};
+				let parameters: unknown = {};
 				if (block.jsonBuffer && block.jsonBuffer.length > 0) {
-					try { input = JSON.parse(block.jsonBuffer); } catch { input = {}; }
+					try { parameters = JSON.parse(block.jsonBuffer); } catch { parameters = {}; }
 				}
-				const call: ToolCall = { id: block.toolId, name: block.toolName, input };
-				onEvent.fire({ kind: 'tool_call', call });
-			}
-			break;
-		}
-		case 'message_delta': {
-			const reason = evt.delta?.stop_reason;
-			if (reason === 'end_turn' || reason === 'tool_use' || reason === 'max_tokens' || reason === 'stop_sequence') {
-				setStopReason(reason);
+				const part: IChatResponseToolUsePart = {
+					type: 'tool_use',
+					name: block.toolName,
+					toolCallId: block.toolId,
+					parameters,
+				};
+				stream.emitOne({ index: idx, part });
 			}
 			break;
 		}
 		default:
-			// message_start, message_stop, ping — ignored. message_end is
-			// fired by parseSseStream after the body closes.
+			// message_start, message_delta, message_stop, ping — ignored.
+			// We don't surface stop_reason; the orchestrator infers it from
+			// presence of tool_use fragments.
 			break;
 	}
 }
-
-// ---- Cfx <-> Anthropic format conversion ----
-
-export function toAnthropicMessages(messages: ReadonlyArray<AgentMessage>): Array<object> {
-	// Anthropic groups consecutive tool_results into a single user
-	// message with multiple tool_result content blocks. We emit one
-	// `{role: 'user', content: [tool_result]}` per ToolResultMessage —
-	// the API accepts that and is simpler than coalescing.
-	const out: Array<object> = [];
-	for (const m of messages) {
-		if (m.role === 'user') {
-			out.push({ role: 'user', content: (m as UserMessage).text });
-		} else if (m.role === 'assistant') {
-			const am = m as AssistantMessage;
-			const blocks: Array<object> = [];
-			if (am.text) {
-				blocks.push({ type: 'text', text: am.text });
-			}
-			for (const tc of am.toolCalls) {
-				blocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.input });
-			}
-			out.push({ role: 'assistant', content: blocks });
-		} else if (m.role === 'tool_result') {
-			const tr = m as ToolResultMessage;
-			out.push({
-				role: 'user',
-				content: [{
-					type: 'tool_result',
-					tool_use_id: tr.toolCallId,
-					content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result),
-					...(tr.isError ? { is_error: true } : {}),
-				}],
-			});
-		}
-	}
-	return out;
-}
-
-function toAnthropicTool(tool: ProviderTool): object {
-	return {
-		name: tool.name,
-		description: tool.description,
-		input_schema: tool.inputSchema,
-	};
-}
-
-registerSingleton(IAgentProvider, AnthropicProvider, InstantiationType.Delayed);

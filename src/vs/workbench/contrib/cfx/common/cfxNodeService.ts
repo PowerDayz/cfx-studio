@@ -43,6 +43,17 @@ export interface IExtractArgs {
 
 export type GameClientKind = 'fivem' | 'redm';
 
+export interface ICodexStdoutEvent {
+	readonly spawnId: string;
+	readonly line: string;
+}
+
+export interface ICodexExitEvent {
+	readonly spawnId: string;
+	readonly code: number | null;
+	readonly signal: string | null;
+}
+
 export interface ICfxNodeService {
 	readonly _serviceBrand: undefined;
 
@@ -104,4 +115,36 @@ export interface ICfxNodeService {
 	 * bridge folder gets overwritten / refreshed on every session start.
 	 */
 	isProcessAlive(pid: number): Promise<boolean>;
+
+	/**
+	 * Check whether the `codex` CLI is on PATH. The renderer-side
+	 * subscription provider polls this once at startup to decide whether
+	 * to register a "ChatGPT (Subscription)" entry in the model picker;
+	 * if the CLI isn't installed the option is hidden entirely rather
+	 * than surfaced as "needs install".
+	 *
+	 * Returns the absolute path to the binary, or `undefined` if not found.
+	 */
+	findCodexBinary(): Promise<string | undefined>;
+
+	/**
+	 * Spawn `<codex> app-server` as a long-lived child process. Returns an
+	 * opaque spawnId used as the key on subsequent calls and emitted events.
+	 * The subprocess speaks newline-delimited JSON-RPC v2 over stdio; the
+	 * renderer-side `CodexSubscriptionProvider` owns the protocol logic and
+	 * writes/reads raw JSON lines via this service.
+	 */
+	spawnCodexAppServer(): Promise<string>;
+
+	/** Write a single JSON-RPC line (no trailing newline; impl adds it). */
+	sendCodexStdin(spawnId: string, jsonLine: string): Promise<void>;
+
+	/** One emitted event per newline-terminated JSON message on stdout. */
+	readonly onCodexStdout: Event<ICodexStdoutEvent>;
+
+	/** Process-exit events for any active codex spawn. */
+	readonly onCodexExit: Event<ICodexExitEvent>;
+
+	/** SIGTERM the spawned codex process. No-op if the spawnId is unknown. */
+	killCodexAppServer(spawnId: string): Promise<void>;
 }
