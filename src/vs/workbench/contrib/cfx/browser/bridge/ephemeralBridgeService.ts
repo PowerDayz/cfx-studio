@@ -49,7 +49,7 @@ const STORAGE_MIGRATED_KEY = 'cfx.bridge.migrated';
  */
 const STORAGE_MISMATCH_SHOWN_KEY = 'cfx.bridge.mismatchNotified';
 
-const FXMANIFEST_LUA = `fx_version 'cerulean'
+export const FXMANIFEST_LUA = `fx_version 'cerulean'
 game 'common'
 author 'Cfx Studio'
 description 'Cfx Studio – session client-error bridge (auto-generated, do not edit).'
@@ -59,7 +59,7 @@ client_script 'client.lua'
 server_script 'server.lua'
 `;
 
-const CLIENT_LUA = `-- Cfx Studio – session client-error bridge (client side).
+export const CLIENT_LUA = `-- Cfx Studio – session client-error bridge (client side).
 --
 -- Forwards unhandled Lua errors from any client-side resource to the
 -- server, where server.lua re-prints them with a [client:<resource>]
@@ -78,7 +78,7 @@ AddEventHandler('onResourceError', function(resourceName, errorText)
 end)
 `;
 
-const SERVER_LUA = `-- Cfx Studio – session client-error bridge (server side).
+export const SERVER_LUA = `-- Cfx Studio – session client-error bridge (server side).
 --
 -- Receives client errors and prints them with a [client:<resource>]
 -- prefix so the Cfx Studio log parser can route them into the right
@@ -90,11 +90,11 @@ RegisterNetEvent('cfx-studio-bridge:v1:clientError', function(resourceName, erro
 end)
 `;
 
-const BRIDGE_CFG_FRAGMENT = `# Cfx Studio – session bridge entry point. Loaded via "+exec .cfx/bridge.cfg".
+export const BRIDGE_CFG_FRAGMENT = `# Cfx Studio – session bridge entry point. Loaded via "+exec .cfx/bridge.cfg".
 ensure ${BRIDGE_RESOURCE_NAME}
 `;
 
-interface BridgePaths {
+export interface BridgePaths {
 	readonly resourceDir: URI;
 	readonly fxmanifest: URI;
 	readonly clientLua: URI;
@@ -104,7 +104,7 @@ interface BridgePaths {
 	readonly lock: URI;
 }
 
-function bridgePaths(workspaceRoot: URI): BridgePaths {
+export function bridgePaths(workspaceRoot: URI): BridgePaths {
 	const resourceDir = joinPath(workspaceRoot, 'resources', BRIDGE_RESOURCE_NAME);
 	const cfxDir = joinPath(workspaceRoot, '.cfx');
 	return {
@@ -118,10 +118,28 @@ function bridgePaths(workspaceRoot: URI): BridgePaths {
 	};
 }
 
-interface SessionLock {
+export interface SessionLock {
 	readonly v: 1;
 	readonly idePid: number;
 	readonly writtenAt: string;
+}
+
+/**
+ * Pure parser for the bridge.lock JSON payload. Returns `undefined` if
+ * the payload is not valid JSON, is a wrong schema version, or is
+ * missing/mistyped required fields. Extracted from the file-reading
+ * `readLock` helper so it can be unit-tested directly.
+ */
+export function parseLock(raw: string): SessionLock | undefined {
+	try {
+		const parsed = JSON.parse(raw) as Partial<SessionLock>;
+		if (parsed?.v !== 1) { return undefined; }
+		if (typeof parsed.idePid !== 'number') { return undefined; }
+		if (typeof parsed.writtenAt !== 'string') { return undefined; }
+		return parsed as SessionLock;
+	} catch {
+		return undefined;
+	}
 }
 
 class EphemeralBridgeService extends Disposable implements IEphemeralBridgeService {
@@ -281,15 +299,7 @@ class EphemeralBridgeService extends Disposable implements IEphemeralBridgeServi
 	private async readLock(uri: URI): Promise<SessionLock | undefined> {
 		const text = await this.tryReadString(uri);
 		if (text === undefined) { return undefined; }
-		try {
-			const parsed = JSON.parse(text) as Partial<SessionLock>;
-			if (parsed?.v !== 1) { return undefined; }
-			if (typeof parsed.idePid !== 'number') { return undefined; }
-			if (typeof parsed.writtenAt !== 'string') { return undefined; }
-			return parsed as SessionLock;
-		} catch {
-			return undefined;
-		}
+		return parseLock(text);
 	}
 
 	private async tryReadString(uri: URI): Promise<string | undefined> {

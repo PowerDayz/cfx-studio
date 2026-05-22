@@ -98,8 +98,14 @@ export class CfxNodeService extends Disposable implements ICfxNodeService {
 			// Signal 0 is a permission/liveness probe — never delivered.
 			process.kill(pid, 0);
 			return true;
-		} catch {
-			return false;
+		} catch (err) {
+			// EPERM means the pid exists but we don't have permission to
+			// signal it (cross-user / elevated processes). Treat that as
+			// alive — the stale-bridge cleanup must not reap artefacts of
+			// an IDE whose process we just can't see clearly.
+			// ESRCH (and anything else) means the pid is gone.
+			const code = (err as NodeJS.ErrnoException | undefined)?.code;
+			return code === 'EPERM';
 		}
 	}
 
