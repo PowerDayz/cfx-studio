@@ -42,8 +42,17 @@ export interface IExtractArgs {
 }
 
 export interface IGameClientSpawnArgs {
+	readonly kind: GameClientKind;
+	/**
+	 * Resolved FiveM.exe / RedM.exe path. Used as a presence probe
+	 * (FiveM URL-handler launch ignores it; RedM PowerShell launch passes
+	 * it to `Start-Process -FilePath`). Resolved by the renderer via
+	 * `resolveGameClientPath` so the user's file-picker choice persists.
+	 */
 	readonly exePath: string;
-	readonly args: ReadonlyArray<string>;
+	readonly host: string;
+	readonly port: number;
+	readonly extraArgs: ReadonlyArray<string>;
 }
 
 /**
@@ -90,11 +99,26 @@ export interface ICfxNodeService {
 	extractArchive(args: IExtractArgs): Promise<void>;
 
 	/**
-	 * Spawn FiveM.exe or RedM.exe with the supplied args (`+connect host:port`
-	 * and any user extra args). Detached + stdio ignored: the game survives
-	 * an IDE crash, and we do not pipe its stdout (the FiveM launcher does
-	 * not write usable output). Resolves with an opaque spawnId used as the
-	 * key on the exit event and for killGameClient.
+	 * Launch FiveM / RedM and connect to `host:port`. Resolves with an
+	 * opaque spawnId used as the key on the exit event and for
+	 * killGameClient.
+	 *
+	 * FiveM is launched via the `fivem://connect/<host>:<port>` URL
+	 * handler (registered by the FiveM installer). RedM has no such
+	 * scheme — `rdr3://` / `redm://` were proposed and closed as
+	 * not-planned upstream — so it is launched via a PowerShell
+	 * `Start-Process` wrapper. Both paths go through processes that
+	 * ROSLauncher's parent-process whitelist accepts (the Windows shell
+	 * for URL handlers, powershell.exe for the PowerShell wrapper); a
+	 * direct `child_process.spawn` from Node, or an intermediary cmd.exe,
+	 * is rejected with "This application should be launched directly from
+	 * the shell or a web browser."
+	 *
+	 * Because the URL-handler path hands off to the Windows shell, the
+	 * spawned wrapper exits immediately and is NOT a parent of the
+	 * eventual game process. Lifecycle ("user closed the game window")
+	 * is therefore tracked by polling `tasklist` for FiveM.exe / RedM.exe
+	 * rather than by listening to a child-process exit event.
 	 */
 	spawnGameClient(args: IGameClientSpawnArgs): Promise<string>;
 

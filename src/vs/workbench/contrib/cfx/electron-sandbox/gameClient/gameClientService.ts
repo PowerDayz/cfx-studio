@@ -103,8 +103,6 @@ export class GameClientService extends Disposable implements IGameClientService 
 		const port = await this.resolvePort();
 		const extraArgs = this.configurationService.getValue<string[]>('cfx.gameClient.extraArgs') ?? [];
 
-		const args = ['+connect', `${host}:${port}`, ...extraArgs];
-
 		// If a game-client process is already running, refuse to spawn
 		// a second launcher. Behaviour of a duplicate spawn-while-running
 		// is unverified (no spike data) and could plausibly start a second
@@ -124,7 +122,7 @@ export class GameClientService extends Disposable implements IGameClientService 
 		this.transition('launching');
 		let spawnId: string;
 		try {
-			spawnId = await this.cfxNodeService.spawnGameClient({ exePath, args });
+			spawnId = await this.cfxNodeService.spawnGameClient({ kind, exePath, host, port, extraArgs });
 		} catch (err) {
 			this.logService.error('[cfx] game client spawn threw', err);
 			this.notificationService.error(localize(

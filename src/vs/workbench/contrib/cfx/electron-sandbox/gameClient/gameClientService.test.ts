@@ -54,7 +54,7 @@ interface HarnessOptions {
 	port?: number;
 	extraArgs?: string[];
 	isAlreadyRunning?: boolean;
-	spawnImpl?: (args: { exePath: string; args: ReadonlyArray<string> }) => Promise<string>;
+	spawnImpl?: (args: { kind: 'fivem' | 'redm'; exePath: string; host: string; port: number; extraArgs: ReadonlyArray<string> }) => Promise<string>;
 }
 
 function makeHarness(opts: HarnessOptions = {}): TestHarness {
@@ -239,6 +239,36 @@ describe('GameClientService auto-launch latch', () => {
 
 		expect(harness.spawnGameClient).not.toHaveBeenCalled();
 		expect(harness.service.state).toBe('idle');
+	});
+});
+
+describe('GameClientService.launch() spawn payload', () => {
+	let harness: TestHarness;
+	afterEach(() => { harness?.service.dispose(); });
+
+	it('hands the Node side the structured payload (kind/exePath/host/port/extraArgs), not a pre-baked args array', async () => {
+		harness = makeHarness({
+			host: '1.2.3.4',
+			port: 30121,
+			extraArgs: ['+set', 'sv_lan', '1'],
+		});
+
+		await harness.service.launch();
+
+		expect(harness.spawnGameClient).toHaveBeenCalledTimes(1);
+		const payload = harness.spawnGameClient.mock.calls[0][0];
+		expect(payload).toMatchObject({
+			kind: 'fivem',
+			host: '1.2.3.4',
+			port: 30121,
+			extraArgs: ['+set', 'sv_lan', '1'],
+		});
+		expect(typeof payload.exePath).toBe('string');
+		// Belt-and-braces: the old `args: ['+connect', …]` field is gone.
+		// Without this assertion, a regression that quietly puts the
+		// connect string back into `args` would survive the toMatchObject
+		// check above.
+		expect(payload).not.toHaveProperty('args');
 	});
 });
 
