@@ -20,12 +20,108 @@ html, body, #root {
 	min-height: 0;
 }
 
-.agent-status {
+.agent-header {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
+	gap: 6px;
 	padding: 6px 10px;
 	border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+}
+
+.agent-header-spacer {
+	flex: 1 1 auto;
+}
+
+.agent-model-picker {
+	flex: 0 1 auto;
+	min-width: 0;
+	max-width: 200px;
+	background: var(--vscode-dropdown-background);
+	color: var(--vscode-dropdown-foreground);
+	border: 1px solid var(--vscode-dropdown-border, transparent);
+	border-radius: 2px;
+	padding: 3px 6px;
+	font-size: 12px;
+	font-family: var(--vscode-font-family);
+}
+
+.agent-model-picker:disabled {
+	opacity: 0.5;
+}
+
+.agent-tools-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	user-select: none;
+}
+
+.agent-tools-toggle input {
+	margin: 0;
+}
+
+.agent-icon-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	background: transparent;
+	color: var(--vscode-foreground);
+	border: 0;
+	border-radius: 2px;
+	cursor: pointer;
+	padding: 0;
+}
+
+.agent-icon-button:hover:not(:disabled) {
+	background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.15));
+}
+
+.agent-icon-button:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+.agent-status-line {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 10px;
+	border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+}
+
+.agent-warn-inline {
+	font-size: 11px;
+	color: var(--vscode-inputValidation-warningForeground, #d6a700);
+}
+
+.agent-empty {
+	padding: 18px 10px;
+	color: var(--vscode-descriptionForeground);
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.agent-empty p {
+	margin: 0 0 8px 0;
+}
+
+.agent-empty-hint {
+	font-size: 11px;
+	opacity: 0.85;
+}
+
+.agent-empty kbd {
+	background: var(--vscode-keybindingLabel-background);
+	color: var(--vscode-keybindingLabel-foreground);
+	border: 1px solid var(--vscode-keybindingLabel-border, transparent);
+	border-bottom-color: var(--vscode-keybindingLabel-bottomBorder, transparent);
+	border-radius: 3px;
+	padding: 1px 4px;
+	font-size: 10px;
 }
 
 .status-pill {

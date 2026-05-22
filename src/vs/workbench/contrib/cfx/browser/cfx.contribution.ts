@@ -57,12 +57,20 @@ registerCfxMcpBridge();
 // Built-in Cfx Agent (slice 1: read-only diagnose mode). The order is
 // important: each side-effect import registers its singleton; consumers
 // further down inject services from above.
+//
+// `cfxChatServices.js` re-registers the upstream chat *services*
+// (ILanguageModelsService, IChatAgentService, ILanguageModelToolsService,
+// …) that workbench.{common,desktop}.main.ts have stripped along with the
+// chat UI. Required by vscode.lm.* and also silences the
+// "CommandsQuickAccessProvider depends on UNKNOWN service chatAgentService"
+// notification that fires on every workbench boot otherwise.
+import './agent/cfxChatServices.js';
 import './agent/secretRegistry.js';
 import './agent/anthropicProvider.js';
+import './agent/openaiProvider.js';
 import './agent/agentToolRunner.js';
 import './agent/agentService.js';
-// Agent panel UI deferred to PR #14 (vscode.lm-based provider picker).
-// import './agent/agentViewContainer.js';
+import './agent/agentViewContainer.js';
 
 import { registerAgentCommands } from './agent/agentCommands.js';
 registerAgentCommands();

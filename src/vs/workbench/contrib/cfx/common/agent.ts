@@ -5,26 +5,24 @@
 
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Event } from '../../../../base/common/event.js';
-import { IDisposable } from '../../../../base/common/lifecycle.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 
 /**
  * Cfx Studio agent — interfaces and message shapes.
  *
- * Two services collaborate behind the agent panel:
- *
  *   - `IAgentService` (browser/agent/agentService.ts) owns conversation
  *     state, drives the tool loop, and surfaces `AgentEvent`s to the
  *     view. The webview talks to this service via message channel.
  *
- *   - `IAgentProvider` (browser/agent/anthropicProvider.ts in slice 1)
- *     is the LLM transport. Renderer-side because the workbench CSP
- *     allows `connect-src https:` so we can fetch api.anthropic.com
- *     directly without a main-process IPC hop.
+ *   - Provider transport lives behind `ILanguageModelsService`: each
+ *     provider (Anthropic, OpenAI, Copilot via its own extension, …)
+ *     registers as an `ILanguageModelChat` and is selectable per-chat
+ *     in the panel's model picker. AgentService picks the model identifier
+ *     and calls `languageModels.sendChatRequest(id, ...)`.
  *
- * The split is intentional: the agent service is provider-agnostic,
- * and any second provider (OpenAI, local llama.cpp, …) plugs in by
- * implementing `IAgentProvider` and switching on `cfx.agent.provider`.
+ * The `AgentMessage` shape here is the internal/UI representation —
+ * richer than `IChatMessage` so we can render tool calls inline. At the
+ * boundary we convert to `IChatMessage[]` before each provider call.
  */
 
 // ---- Message types ----
@@ -66,19 +64,13 @@ export interface ToolCall {
 	readonly input: unknown;
 }
 
-// ---- Provider streaming protocol ----
-
-export type ProviderEvent =
-	| { readonly kind: 'token'; readonly text: string }
-	| { readonly kind: 'tool_call'; readonly call: ToolCall }
-	| { readonly kind: 'message_end'; readonly stopReason: 'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence' | 'unknown' }
-	| { readonly kind: 'error'; readonly message: string };
+// ---- Tool advertisement ----
 
 /**
- * Subset of an Anthropic tool definition. The agent service passes one
- * of these per tool when calling `complete()`; the JSON schemas come
- * straight out of `_shared/cfx-tools/` for the MCP-mirrored tools, and
- * are defined inline in the tool runner for slice-1 additions like
+ * Subset of an Anthropic-style tool definition. Both providers (Anthropic
+ * + OpenAI) consume the same shape via `options.tools` on the LM API call.
+ * JSON schemas come from `_shared/cfx-tools/` for the MCP-mirrored tools
+ * and are defined inline in the tool runner for slice-1 additions like
  * `cfx_read_file`.
  */
 export interface ProviderTool {
@@ -86,49 +78,6 @@ export interface ProviderTool {
 	readonly description: string;
 	readonly inputSchema: object;
 }
-
-export interface CompleteRequest {
-	readonly systemPrompt: string;
-	readonly model: string;
-	readonly messages: ReadonlyArray<AgentMessage>;
-	readonly tools: ReadonlyArray<ProviderTool>;
-	/**
-	 * Max output tokens per turn. The provider may further cap this; the
-	 * service uses a sane default if unset.
-	 */
-	readonly maxTokens?: number;
-}
-
-/**
- * Running streaming completion. Subscribers consume `onEvent` until a
- * `message_end` or `error` event arrives, then dispose. Disposing
- * mid-stream cancels the underlying request.
- */
-export interface IAgentCompletion extends IDisposable {
-	readonly onEvent: Event<ProviderEvent>;
-}
-
-export interface IAgentProvider {
-	readonly _serviceBrand: undefined;
-
-	/**
-	 * Starts a streaming completion. Returns an `IAgentCompletion` whose
-	 * `onEvent` fires per provider event. The completion auto-disposes
-	 * on `message_end` / `error`; the caller can dispose earlier to
-	 * cancel. `token` (the cancellation token) cancels equivalently.
-	 */
-	complete(req: CompleteRequest, token: CancellationToken): IAgentCompletion;
-
-	/**
-	 * True when the agent has a usable API key AND the underlying
-	 * secret-storage backend reports encryption is available. False
-	 * means the user has either never set a key, or has set one but the
-	 * key won't persist across IDE restarts (in-memory fallback).
-	 */
-	isReady(): Promise<{ ready: boolean; encryptionAvailable: boolean }>;
-}
-
-export const IAgentProvider = createDecorator<IAgentProvider>('cfxAgentProvider');
 
 // ---- Agent service (orchestrator) ----
 
@@ -148,6 +97,13 @@ export type AgentEvent =
 	| { readonly kind: 'user_message'; readonly message: UserMessage }
 	| { readonly kind: 'error'; readonly message: string };
 
+export interface SendOptions {
+	/** ILanguageModelsService identifier — e.g. `cfx.anthropic/claude-opus-4-7`. */
+	readonly modelId: string;
+	/** When false the agent runs in chat-only mode (no tool calls). Defaults true. */
+	readonly toolsEnabled?: boolean;
+}
+
 export interface IAgentService {
 	readonly _serviceBrand: undefined;
 
@@ -156,11 +112,11 @@ export interface IAgentService {
 	readonly onDidEvent: Event<AgentEvent>;
 
 	/**
-	 * Append a user message and start the loop. Returns when the
-	 * assistant turn (including any tool calls) finishes. Concurrent
-	 * sends are rejected — wait for `state` to return to `idle`.
+	 * Append a user message and start the loop against the chosen model.
+	 * Returns when the assistant turn (including any tool calls) finishes.
+	 * Concurrent sends are rejected — wait for `state` to return to `idle`.
 	 */
-	send(text: string, token: CancellationToken): Promise<void>;
+	send(text: string, opts: SendOptions, token: CancellationToken): Promise<void>;
 
 	/** Reset conversation state. Cancels any in-flight completion. */
 	clear(): void;

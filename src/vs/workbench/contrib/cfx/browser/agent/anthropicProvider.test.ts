@@ -4,198 +4,188 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { describe, expect, it } from 'vitest';
-import { Emitter } from '../../../../../base/common/event.js';
-import { AgentMessage, ProviderEvent, ToolCall } from '../../common/agent.js';
-import { BlockState, handleSseEvent, toAnthropicMessages } from './anthropicProvider.js';
+import { ChatMessageRole, IChatMessage, IChatResponseFragment } from '../../../chat/common/languageModels.js';
+import { BlockState, handleSseEvent, splitSystemAndMessages } from './anthropicProvider.js';
 
-function collect(): { emitter: Emitter<ProviderEvent>; events: ProviderEvent[] } {
-	const emitter = new Emitter<ProviderEvent>();
-	const events: ProviderEvent[] = [];
-	emitter.event((e) => events.push(e));
-	return { emitter, events };
+/**
+ * Minimal stub matching the surface of `AsyncIterableSource` that
+ * handleSseEvent calls into. We only need `emitOne` to capture
+ * fragments for assertions; the iterable surface isn't exercised here.
+ */
+function collectingStream() {
+	const fragments: IChatResponseFragment[] = [];
+	return {
+		stream: { emitOne: (f: IChatResponseFragment) => { fragments.push(f); } } as unknown as Parameters<typeof handleSseEvent>[2],
+		fragments,
+	};
 }
 
 describe('handleSseEvent (Anthropic SSE parser)', () => {
 	it('ignores malformed JSON without crashing', () => {
-		const { emitter, events } = collect();
+		const { stream, fragments } = collectingStream();
 		const blocks = new Map<number, BlockState>();
-		handleSseEvent('this is not json', blocks, emitter, () => undefined);
-		expect(events).toEqual([]);
+		handleSseEvent('this is not json', blocks, stream);
+		expect(fragments).toEqual([]);
 		expect(blocks.size).toBe(0);
 	});
 
-	it('emits a token event for a text content_block_delta', () => {
-		const { emitter, events } = collect();
+	it('emits a text fragment per text_delta', () => {
+		const { stream, fragments } = collectingStream();
 		const blocks = new Map<number, BlockState>();
-		handleSseEvent(JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }), blocks, emitter, () => undefined);
-		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hello' } }), blocks, emitter, () => undefined);
-		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ' world' } }), blocks, emitter, () => undefined);
+		handleSseEvent(JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }), blocks, stream);
+		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hello' } }), blocks, stream);
+		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ' world' } }), blocks, stream);
 
-		expect(events).toHaveLength(2);
-		expect(events[0]).toEqual({ kind: 'token', text: 'Hello' });
-		expect(events[1]).toEqual({ kind: 'token', text: ' world' });
+		expect(fragments).toHaveLength(2);
+		expect(fragments[0]).toEqual({ index: 0, part: { type: 'text', value: 'Hello' } });
+		expect(fragments[1]).toEqual({ index: 0, part: { type: 'text', value: ' world' } });
 	});
 
 	it('reassembles a tool_use whose input_json is split across multiple deltas', () => {
-		const { emitter, events } = collect();
+		const { stream, fragments } = collectingStream();
 		const blocks = new Map<number, BlockState>();
 
 		handleSseEvent(JSON.stringify({
 			type: 'content_block_start',
 			index: 0,
 			content_block: { type: 'tool_use', id: 'call_42', name: 'cfx_search_natives' },
-		}), blocks, emitter, () => undefined);
+		}), blocks, stream);
 
-		// Split the JSON {"query":"GET_PED"} across three chunks.
-		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"que' } }), blocks, emitter, () => undefined);
-		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: 'ry":"GET' } }), blocks, emitter, () => undefined);
-		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '_PED"}' } }), blocks, emitter, () => undefined);
+		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"que' } }), blocks, stream);
+		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: 'ry":"GET' } }), blocks, stream);
+		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '_PED"}' } }), blocks, stream);
 
-		// No events yet — the tool_call should only fire on content_block_stop.
-		expect(events).toHaveLength(0);
+		// No fragments yet — tool_use only fires on content_block_stop.
+		expect(fragments).toHaveLength(0);
 
-		handleSseEvent(JSON.stringify({ type: 'content_block_stop', index: 0 }), blocks, emitter, () => undefined);
+		handleSseEvent(JSON.stringify({ type: 'content_block_stop', index: 0 }), blocks, stream);
 
-		expect(events).toHaveLength(1);
-		const evt = events[0] as Extract<ProviderEvent, { kind: 'tool_call' }>;
-		expect(evt.kind).toBe('tool_call');
-		expect(evt.call).toEqual<ToolCall>({ id: 'call_42', name: 'cfx_search_natives', input: { query: 'GET_PED' } });
+		expect(fragments).toHaveLength(1);
+		expect(fragments[0]).toEqual({
+			index: 0,
+			part: { type: 'tool_use', name: 'cfx_search_natives', toolCallId: 'call_42', parameters: { query: 'GET_PED' } },
+		});
 	});
 
-	it('handles a tool_use with no input_json_delta as an empty-input call', () => {
-		const { emitter, events } = collect();
+	it('handles a tool_use with no input_json_delta as an empty-parameters call', () => {
+		const { stream, fragments } = collectingStream();
 		const blocks = new Map<number, BlockState>();
-
 		handleSseEvent(JSON.stringify({
 			type: 'content_block_start',
 			index: 0,
 			content_block: { type: 'tool_use', id: 'call_x', name: 'cfx_server_state' },
-		}), blocks, emitter, () => undefined);
-		handleSseEvent(JSON.stringify({ type: 'content_block_stop', index: 0 }), blocks, emitter, () => undefined);
+		}), blocks, stream);
+		handleSseEvent(JSON.stringify({ type: 'content_block_stop', index: 0 }), blocks, stream);
 
-		expect(events).toHaveLength(1);
-		const evt = events[0] as Extract<ProviderEvent, { kind: 'tool_call' }>;
-		expect(evt.call).toEqual<ToolCall>({ id: 'call_x', name: 'cfx_server_state', input: {} });
+		expect(fragments).toHaveLength(1);
+		const frag = fragments[0];
+		expect(frag.part.type).toBe('tool_use');
+		if (frag.part.type === 'tool_use') {
+			expect(frag.part.toolCallId).toBe('call_x');
+			expect(frag.part.parameters).toEqual({});
+		}
 	});
 
-	it('falls back to empty input when partial_json fails to parse', () => {
-		const { emitter, events } = collect();
+	it('falls back to empty parameters when partial_json fails to parse', () => {
+		const { stream, fragments } = collectingStream();
 		const blocks = new Map<number, BlockState>();
-
 		handleSseEvent(JSON.stringify({
 			type: 'content_block_start',
 			index: 0,
 			content_block: { type: 'tool_use', id: 'call_y', name: 'cfx_server_state' },
-		}), blocks, emitter, () => undefined);
-		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{broken' } }), blocks, emitter, () => undefined);
-		handleSseEvent(JSON.stringify({ type: 'content_block_stop', index: 0 }), blocks, emitter, () => undefined);
+		}), blocks, stream);
+		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{broken' } }), blocks, stream);
+		handleSseEvent(JSON.stringify({ type: 'content_block_stop', index: 0 }), blocks, stream);
 
-		const evt = events[0] as Extract<ProviderEvent, { kind: 'tool_call' }>;
-		expect(evt.call.input).toEqual({});
-	});
-
-	it('propagates message_delta.stop_reason via the setStopReason callback', () => {
-		const blocks = new Map<number, BlockState>();
-		const onEvent = new Emitter<ProviderEvent>();
-
-		const observed: string[] = [];
-		const setStop = (r: string) => observed.push(r);
-
-		for (const reason of ['end_turn', 'tool_use', 'max_tokens', 'stop_sequence']) {
-			handleSseEvent(JSON.stringify({ type: 'message_delta', delta: { stop_reason: reason } }), blocks, onEvent, setStop as any);
+		const frag = fragments[0];
+		if (frag.part.type === 'tool_use') {
+			expect(frag.part.parameters).toEqual({});
 		}
-		expect(observed).toEqual(['end_turn', 'tool_use', 'max_tokens', 'stop_sequence']);
-	});
-
-	it('ignores unknown stop_reason values rather than corrupting state', () => {
-		const blocks = new Map<number, BlockState>();
-		const onEvent = new Emitter<ProviderEvent>();
-		const observed: string[] = [];
-		handleSseEvent(JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'banana' } }), blocks, onEvent, (r) => observed.push(r));
-		expect(observed).toEqual([]);
 	});
 
 	it('ignores deltas that arrive without a matching content_block_start', () => {
-		const { emitter, events } = collect();
+		const { stream, fragments } = collectingStream();
 		const blocks = new Map<number, BlockState>();
-		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 7, delta: { type: 'text_delta', text: 'x' } }), blocks, emitter, () => undefined);
-		expect(events).toEqual([]);
+		handleSseEvent(JSON.stringify({ type: 'content_block_delta', index: 7, delta: { type: 'text_delta', text: 'x' } }), blocks, stream);
+		expect(fragments).toEqual([]);
 	});
 });
 
-describe('toAnthropicMessages', () => {
-	it('maps a user message to a {role:user, content:string} block', () => {
-		const messages: AgentMessage[] = [{ role: 'user', text: 'hello' }];
-		expect(toAnthropicMessages(messages)).toEqual([{ role: 'user', content: 'hello' }]);
-	});
-
-	it('omits empty text from an assistant message but keeps tool_use blocks', () => {
-		const messages: AgentMessage[] = [{
-			role: 'assistant',
-			text: '',
-			toolCalls: [{ id: 'c1', name: 'cfx_server_state', input: {} }],
-		}];
-		const result = toAnthropicMessages(messages);
-		expect(result).toEqual([{
-			role: 'assistant',
-			content: [{ type: 'tool_use', id: 'c1', name: 'cfx_server_state', input: {} }],
+describe('splitSystemAndMessages (IChatMessage[] → Anthropic API shape)', () => {
+	it('concatenates System-role messages into the systemPrompt field', () => {
+		const messages: IChatMessage[] = [
+			{ role: ChatMessageRole.System, content: [{ type: 'text', value: 'you are an agent' }] },
+			{ role: ChatMessageRole.User, content: [{ type: 'text', value: 'hi' }] },
+		];
+		const { systemPrompt, anthropicMessages } = splitSystemAndMessages(messages);
+		expect(systemPrompt).toBe('you are an agent');
+		expect(anthropicMessages).toEqual([{
+			role: 'user',
+			content: [{ type: 'text', text: 'hi' }],
 		}]);
 	});
 
-	it('emits text and tool_use blocks in the order text-then-tools', () => {
-		const messages: AgentMessage[] = [{
-			role: 'assistant',
-			text: 'thinking…',
-			toolCalls: [
-				{ id: 'c1', name: 'cfx_server_state', input: {} },
-				{ id: 'c2', name: 'cfx_recent_logs', input: { limit: 10 } },
+	it('joins multiple system messages with blank lines', () => {
+		const messages: IChatMessage[] = [
+			{ role: ChatMessageRole.System, content: [{ type: 'text', value: 'first' }] },
+			{ role: ChatMessageRole.System, content: [{ type: 'text', value: 'second' }] },
+		];
+		const { systemPrompt } = splitSystemAndMessages(messages);
+		expect(systemPrompt).toBe('first\n\nsecond');
+	});
+
+	it('maps tool_use content to {type:tool_use, id, name, input} for assistant turns', () => {
+		const messages: IChatMessage[] = [{
+			role: ChatMessageRole.Assistant,
+			content: [
+				{ type: 'text', value: 'thinking' },
+				{ type: 'tool_use', name: 'cfx_server_state', toolCallId: 'c1', parameters: {} },
 			],
 		}];
-		const result = toAnthropicMessages(messages);
-		expect(result).toEqual([{
+		const { anthropicMessages } = splitSystemAndMessages(messages);
+		expect(anthropicMessages).toEqual([{
 			role: 'assistant',
 			content: [
-				{ type: 'text', text: 'thinking…' },
+				{ type: 'text', text: 'thinking' },
 				{ type: 'tool_use', id: 'c1', name: 'cfx_server_state', input: {} },
-				{ type: 'tool_use', id: 'c2', name: 'cfx_recent_logs', input: { limit: 10 } },
 			],
 		}]);
 	});
 
-	it('wraps a successful tool_result inside a user message with tool_result block', () => {
-		const messages: AgentMessage[] = [{
-			role: 'tool_result',
-			toolCallId: 'c1',
-			result: '{"running":true}',
-			isError: false,
+	it('flattens tool_result content (multiple text parts) into a single string', () => {
+		const messages: IChatMessage[] = [{
+			role: ChatMessageRole.User,
+			content: [{
+				type: 'tool_result',
+				toolCallId: 'c1',
+				value: [
+					{ type: 'text', value: 'part one' },
+					{ type: 'text', value: ' part two' },
+				],
+				isError: false,
+			}],
 		}];
-		expect(toAnthropicMessages(messages)).toEqual([{
+		const { anthropicMessages } = splitSystemAndMessages(messages);
+		expect(anthropicMessages).toEqual([{
 			role: 'user',
-			content: [{ type: 'tool_result', tool_use_id: 'c1', content: '{"running":true}' }],
+			content: [{ type: 'tool_result', tool_use_id: 'c1', content: 'part one part two' }],
 		}]);
 	});
 
 	it('sets is_error: true on error tool_results', () => {
-		const messages: AgentMessage[] = [{
-			role: 'tool_result',
-			toolCallId: 'c2',
-			result: 'connection refused',
-			isError: true,
+		const messages: IChatMessage[] = [{
+			role: ChatMessageRole.User,
+			content: [{
+				type: 'tool_result',
+				toolCallId: 'c2',
+				value: [{ type: 'text', value: 'connection refused' }],
+				isError: true,
+			}],
 		}];
-		expect(toAnthropicMessages(messages)).toEqual([{
+		const { anthropicMessages } = splitSystemAndMessages(messages);
+		expect(anthropicMessages).toEqual([{
 			role: 'user',
 			content: [{ type: 'tool_result', tool_use_id: 'c2', content: 'connection refused', is_error: true }],
 		}]);
-	});
-
-	it('JSON-stringifies non-string tool_result payloads', () => {
-		const messages: AgentMessage[] = [{
-			role: 'tool_result',
-			toolCallId: 'c3',
-			result: { items: [1, 2, 3] },
-			isError: false,
-		}];
-		const result = toAnthropicMessages(messages) as Array<{ content: Array<{ content: string }> }>;
-		expect(result[0].content[0].content).toBe('{"items":[1,2,3]}');
 	});
 });

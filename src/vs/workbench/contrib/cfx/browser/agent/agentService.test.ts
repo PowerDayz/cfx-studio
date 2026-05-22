@@ -4,64 +4,87 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { describe, expect, it, vi } from 'vitest';
+import { AsyncIterableSource, DeferredPromise } from '../../../../../base/common/async.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../../base/common/cancellation.js';
-import { Emitter, Event } from '../../../../../base/common/event.js';
+import { Event } from '../../../../../base/common/event.js';
+import {
+	IChatMessage,
+	IChatResponseFragment,
+	ILanguageModelChatResponse,
+	ILanguageModelsService,
+} from '../../../chat/common/languageModels.js';
 import {
 	AgentEvent,
-	CompleteRequest,
-	IAgentCompletion,
-	IAgentProvider,
 	IAgentToolRunner,
-	ProviderEvent,
+	ProviderTool,
 	ToolCall,
 	ToolExecResult,
-	ProviderTool,
 } from '../../common/agent.js';
 import { IGameModeService, GameMode } from '../../common/gameMode.js';
 import { AgentService } from './agentService.js';
 
 /**
- * Mock provider that lets the test scriptt a sequence of provider
- * turns. Each entry in `turnScripts` is the list of events the
- * provider will emit on the corresponding `complete()` call. After
- * the last scripted turn the mock keeps replaying the final script
- * (so a runaway-loop test doesn't run off the end of the array).
+ * Script for a single LM turn: a sequence of response parts (text /
+ * tool_use) followed by either successful stream close or an error.
+ * The mock service flushes them on each `sendChatRequest` call.
  */
-function createMockProvider(turnScripts: ReadonlyArray<ReadonlyArray<ProviderEvent>>): IAgentProvider {
+interface TurnScript {
+	readonly parts: ReadonlyArray<IChatResponseFragment['part']>;
+	readonly error?: Error;
+}
+
+interface MockLm extends ILanguageModelsService {
+	readonly sendChatRequestCalls: Array<{ modelId: string; messages: IChatMessage[]; options: { [k: string]: unknown } }>;
+}
+
+function createMockLanguageModelsService(turns: ReadonlyArray<TurnScript>): MockLm {
 	let turn = 0;
-	const completeCalls: CompleteRequest[] = [];
-	const provider: IAgentProvider & { completeCalls: CompleteRequest[] } = {
-		_serviceBrand: undefined,
-		completeCalls,
-		isReady: async () => ({ ready: true, encryptionAvailable: true }),
-		complete(req: CompleteRequest, token: CancellationToken): IAgentCompletion {
-			completeCalls.push(req);
-			const script = turnScripts[Math.min(turn, turnScripts.length - 1)] ?? [];
+	const calls: Array<{ modelId: string; messages: IChatMessage[]; options: { [k: string]: unknown } }> = [];
+	const svc = {
+		_serviceBrand: undefined as never,
+		onDidChangeLanguageModels: Event.None,
+		getLanguageModelIds: () => [],
+		lookupLanguageModel: () => undefined,
+		selectLanguageModels: async () => [],
+		registerLanguageModelChat: () => ({ dispose: () => undefined }),
+		computeTokenLength: async () => 0,
+		sendChatRequest: async (modelId: string, _from: never, messages: IChatMessage[], options: { [k: string]: unknown }, token: CancellationToken): Promise<ILanguageModelChatResponse> => {
+			calls.push({ modelId, messages, options });
+			const script = turns[Math.min(turn, turns.length - 1)] ?? { parts: [] };
 			turn++;
-			const onEvent = new Emitter<ProviderEvent>();
-			// Fire events on a microtask so subscribers can attach first.
-			queueMicrotask(() => {
-				for (const evt of script) {
-					onEvent.fire(evt);
-				}
-			});
-			// Mirror AnthropicProvider: if cancelled mid-stream, surface a
-			// terminal `message_end` so runTurn's promise resolves and the
-			// orchestrator's per-iteration cancellation check can break out.
-			// Without this, hung scripts deadlock the test runner.
+
+			const stream = new AsyncIterableSource<IChatResponseFragment>();
+			const result = new DeferredPromise<unknown>();
 			const cancelSub = token.onCancellationRequested(() => {
-				onEvent.fire({ kind: 'message_end', stopReason: 'unknown' });
+				stream.resolve();
+				result.complete(undefined);
 			});
-			return {
-				onEvent: onEvent.event,
-				dispose: () => {
-					cancelSub.dispose();
-					onEvent.dispose();
-				},
-			};
+
+			queueMicrotask(() => {
+				for (let i = 0; i < script.parts.length; i++) {
+					stream.emitOne({ index: i, part: script.parts[i] });
+				}
+				if (script.error) {
+					stream.reject(script.error);
+					result.error(script.error);
+				} else {
+					stream.resolve();
+					result.complete(undefined);
+				}
+				cancelSub.dispose();
+			});
+
+			// AgentService bails on the for-await stream reject before awaiting
+			// result.p; without a parking catch here Node treats the rejection
+			// as unhandled and the test runner flags it. The await in production
+			// code (`await response.result` after the for-await loop) only ever
+			// runs on the happy path.
+			result.p.catch(() => undefined);
+			return { stream: stream.asyncIterable, result: result.p };
 		},
-	};
-	return provider;
+		sendChatRequestCalls: calls,
+	} as MockLm;
+	return svc;
 }
 
 function createMockRunner(execute = vi.fn(async (call: ToolCall): Promise<ToolExecResult> => ({
@@ -85,15 +108,7 @@ function createMockGameMode(): IGameModeService {
 	};
 }
 
-function createMockConfig(): { getValue<T>(key: string): T } {
-	return {
-		getValue<T>(_key: string): T {
-			return undefined as unknown as T;
-		},
-	};
-}
-
-function createMockLog(): { error: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; info: ReturnType<typeof vi.fn>; trace: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> } {
+function createMockLog() {
 	return {
 		error: vi.fn(),
 		warn: vi.fn(),
@@ -103,16 +118,12 @@ function createMockLog(): { error: ReturnType<typeof vi.fn>; warn: ReturnType<ty
 	};
 }
 
-function makeService(provider: IAgentProvider, runner: IAgentToolRunner): AgentService {
-	// AgentService consumes the typed services positionally. DI
-	// decorators in its constructor are inert at runtime — direct
-	// construction works.
+function makeService(lm: MockLm, runner: IAgentToolRunner): AgentService {
 	return new AgentService(
-		provider,
+		lm,
 		runner,
 		createMockGameMode(),
-		createMockConfig() as any,
-		createMockLog() as any,
+		createMockLog() as never,
 	);
 }
 
@@ -122,116 +133,108 @@ function recordEvents(svc: AgentService): AgentEvent[] {
 	return events;
 }
 
+const MODEL = 'cfx.anthropic/claude-sonnet-4-6';
+
 describe('AgentService.runLoop', () => {
 	it('completes a turn with no tool calls and settles back to idle', async () => {
-		const provider = createMockProvider([
-			[
-				{ kind: 'token', text: 'hello' },
-				{ kind: 'message_end', stopReason: 'end_turn' },
-			],
+		const lm = createMockLanguageModelsService([
+			{ parts: [{ type: 'text', value: 'hello' }] },
 		]);
-		const svc = makeService(provider, createMockRunner());
+		const svc = makeService(lm, createMockRunner());
 		const events = recordEvents(svc);
 
-		await svc.send('hi', CancellationToken.None);
+		await svc.send('hi', { modelId: MODEL }, CancellationToken.None);
 
 		expect(svc.state).toBe('idle');
 		expect(svc.messages).toHaveLength(2); // user + assistant
 		expect(svc.messages[0]).toMatchObject({ role: 'user', text: 'hi' });
 		expect(svc.messages[1]).toMatchObject({ role: 'assistant', text: 'hello', toolCalls: [] });
-		// Final state event must announce 'idle'.
 		const finalState = [...events].reverse().find((e) => e.kind === 'state');
 		expect(finalState).toMatchObject({ kind: 'state', state: 'idle' });
 	});
 
-	it('iterates the loop once when a tool_use is returned, then settles', async () => {
-		const call: ToolCall = { id: 'call_1', name: 'cfx_server_state', input: {} };
-		const provider = createMockProvider([
-			[
-				{ kind: 'tool_call', call },
-				{ kind: 'message_end', stopReason: 'tool_use' },
-			],
-			[
-				{ kind: 'token', text: 'done' },
-				{ kind: 'message_end', stopReason: 'end_turn' },
-			],
+	it('iterates the loop once when a tool_use fragment arrives, then settles', async () => {
+		const lm = createMockLanguageModelsService([
+			{ parts: [{ type: 'tool_use', name: 'cfx_server_state', toolCallId: 'call_1', parameters: {} }] },
+			{ parts: [{ type: 'text', value: 'done' }] },
 		]);
 		const runner = createMockRunner();
-		const svc = makeService(provider, runner);
+		const svc = makeService(lm, runner);
 
-		await svc.send('check state', CancellationToken.None);
+		await svc.send('check state', { modelId: MODEL }, CancellationToken.None);
 
 		expect(svc.state).toBe('idle');
 		expect(runner.execute).toHaveBeenCalledTimes(1);
-		expect(runner.execute).toHaveBeenCalledWith(call);
+		expect(runner.execute).toHaveBeenCalledWith({ id: 'call_1', name: 'cfx_server_state', input: {} });
 		// user, assistant w/ tool_call, tool_result, assistant final
 		expect(svc.messages).toHaveLength(4);
 		expect(svc.messages[2]).toMatchObject({ role: 'tool_result', toolCallId: 'call_1', isError: false });
 	});
 
 	it('aborts with an error event after 8 tool-loop iterations', async () => {
-		// Every turn returns one tool_call and stop_reason=tool_use, so
-		// the loop never naturally exits. The runner only sees calls up to
-		// the bound — exactly 8.
-		const looping: ProviderEvent[] = [
-			{ kind: 'tool_call', call: { id: 'loop', name: 'cfx_server_state', input: {} } },
-			{ kind: 'message_end', stopReason: 'tool_use' },
-		];
-		const provider = createMockProvider([looping]);
+		// Every turn returns one tool_use → never naturally exits the loop.
+		const looping: TurnScript = {
+			parts: [{ type: 'tool_use', name: 'cfx_server_state', toolCallId: 'loop', parameters: {} }],
+		};
+		const lm = createMockLanguageModelsService([looping]);
 		const runner = createMockRunner();
-		const svc = makeService(provider, runner);
+		const svc = makeService(lm, runner);
 		const events = recordEvents(svc);
 
-		await svc.send('go', CancellationToken.None);
+		await svc.send('go', { modelId: MODEL }, CancellationToken.None);
 
-		// Loop must have executed exactly 8 provider turns + 8 tool runs.
 		expect(runner.execute).toHaveBeenCalledTimes(8);
-		// And surfaced the runaway-guard error event.
 		const errorEvt = events.find((e) => e.kind === 'error');
 		expect(errorEvt).toBeDefined();
 		expect((errorEvt as Extract<AgentEvent, { kind: 'error' }>).message).toMatch(/8 iterations/);
-		// runLoop throws on bound abort so send()'s catch path is the
-		// single error settlement — state and event agree.
 		expect(svc.state).toBe('errored');
 	});
 
 	it('rejects a concurrent send() while the agent is busy', async () => {
-		// First turn emits tokens then never ends. The mock provider
-		// listens for cancellation and surfaces message_end on abort, so
-		// `svc.clear()` lets the first send() settle cleanly without
-		// deadlocking the test runner.
-		const provider = createMockProvider([
-			[{ kind: 'token', text: 'partial' } /* no message_end on purpose */],
-		]);
-		const svc = makeService(provider, createMockRunner());
+		// First request never resolves (stream stays open) until cancelled.
+		const lm: MockLm = createMockLanguageModelsService([]);
+		lm.sendChatRequest = (async (_modelId, _from, _messages, _options, token) => {
+			const stream = new AsyncIterableSource<IChatResponseFragment>();
+			const result = new DeferredPromise<unknown>();
+			token.onCancellationRequested(() => {
+				stream.resolve();
+				result.complete(undefined);
+			});
+			return { stream: stream.asyncIterable, result: result.p };
+		}) as MockLm['sendChatRequest'];
 
-		const first = svc.send('first', CancellationToken.None);
-		// Yield so the first send transitions out of 'idle' into
-		// 'awaiting_model' before the second send is attempted.
+		const svc = makeService(lm, createMockRunner());
+
+		const first = svc.send('first', { modelId: MODEL }, CancellationToken.None);
 		await Promise.resolve();
 		await Promise.resolve();
 
-		await expect(svc.send('second', CancellationToken.None)).rejects.toThrow('agent is busy');
+		await expect(svc.send('second', { modelId: MODEL }, CancellationToken.None)).rejects.toThrow('agent is busy');
 
-		svc.clear(); // triggers cancellation → mock emits message_end → first resolves
+		svc.clear();
 		await first.catch(() => undefined);
 	});
 
 	it('settles back to idle when the external cancellation token fires mid-stream', async () => {
-		const provider = createMockProvider([
-			[{ kind: 'token', text: 'partial' } /* no message_end on purpose */],
-		]);
-		const svc = makeService(provider, createMockRunner());
+		const lm: MockLm = createMockLanguageModelsService([]);
+		lm.sendChatRequest = (async (_modelId, _from, _messages, _options, token) => {
+			const stream = new AsyncIterableSource<IChatResponseFragment>();
+			const result = new DeferredPromise<unknown>();
+			token.onCancellationRequested(() => {
+				stream.resolve();
+				result.complete(undefined);
+			});
+			return { stream: stream.asyncIterable, result: result.p };
+		}) as MockLm['sendChatRequest'];
+
+		const svc = makeService(lm, createMockRunner());
 
 		const cts = new CancellationTokenSource();
-		const sendPromise = svc.send('go', cts.token);
+		const sendPromise = svc.send('go', { modelId: MODEL }, cts.token);
 		await Promise.resolve();
 		await Promise.resolve();
 		cts.cancel();
 
-		// The mock provider's cancel handler emits message_end → runTurn
-		// resolves → runLoop's next iteration sees the cancellation token
-		// and bails → send() settles via the 'idle' branch (line 96).
 		await sendPromise;
 
 		expect(svc.state).toBe('idle');
@@ -239,16 +242,50 @@ describe('AgentService.runLoop', () => {
 	});
 
 	it('sets state=errored and fires an error event when the provider errors', async () => {
-		const provider = createMockProvider([
-			[{ kind: 'error', message: 'boom' }],
+		const lm = createMockLanguageModelsService([
+			{ parts: [], error: new Error('boom') },
 		]);
-		const svc = makeService(provider, createMockRunner());
+		const svc = makeService(lm, createMockRunner());
 		const events = recordEvents(svc);
 
-		await svc.send('break', CancellationToken.None);
+		await svc.send('break', { modelId: MODEL }, CancellationToken.None);
 
 		expect(svc.state).toBe('errored');
 		const errEvt = events.find((e) => e.kind === 'error');
 		expect(errEvt).toMatchObject({ kind: 'error', message: 'boom' });
+	});
+
+	it('passes tools list through options when toolsEnabled !== false', async () => {
+		const lm = createMockLanguageModelsService([
+			{ parts: [{ type: 'text', value: 'ok' }] },
+		]);
+		const runner = createMockRunner();
+		runner.getTools = (): ReadonlyArray<ProviderTool> => [{
+			name: 'cfx_server_state', description: 'state', inputSchema: { type: 'object' },
+		}];
+		const svc = makeService(lm, runner);
+
+		await svc.send('go', { modelId: MODEL }, CancellationToken.None);
+
+		expect(lm.sendChatRequestCalls).toHaveLength(1);
+		const tools = lm.sendChatRequestCalls[0].options['tools'] as Array<{ name: string }>;
+		expect(tools).toHaveLength(1);
+		expect(tools[0].name).toBe('cfx_server_state');
+	});
+
+	it('passes empty tools when toolsEnabled === false', async () => {
+		const lm = createMockLanguageModelsService([
+			{ parts: [{ type: 'text', value: 'chat only' }] },
+		]);
+		const runner = createMockRunner();
+		runner.getTools = (): ReadonlyArray<ProviderTool> => [{
+			name: 'cfx_server_state', description: 'state', inputSchema: { type: 'object' },
+		}];
+		const svc = makeService(lm, runner);
+
+		await svc.send('go', { modelId: MODEL, toolsEnabled: false }, CancellationToken.None);
+
+		const tools = lm.sendChatRequestCalls[0].options['tools'] as Array<unknown>;
+		expect(tools).toHaveLength(0);
 	});
 });

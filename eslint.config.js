@@ -1076,6 +1076,11 @@ export default tseslint.config(
 						// or feed AgentService-style streams. Per TESTING.md:
 						// stay out of vs/platform/* and vs/workbench/services/*.
 						'vs/base/**/*',
+						// vscode.lm chat types (IChatMessage, IChatResponseFragment,
+						// ILanguageModelChat etc) — agent providers and AgentService
+						// converge on these. Pure interfaces in chat/common; no
+						// chat UI / workbench-services pulled in.
+						'vs/workbench/contrib/chat/common/**/*',
 						'vitest'
 					]
 				},
