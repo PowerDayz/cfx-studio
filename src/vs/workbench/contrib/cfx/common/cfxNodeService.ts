@@ -41,6 +41,8 @@ export interface IExtractArgs {
 	readonly destDir: string;
 }
 
+export type GameClientKind = 'fivem' | 'redm';
+
 export interface ICfxNodeService {
 	readonly _serviceBrand: undefined;
 
@@ -69,4 +71,37 @@ export interface ICfxNodeService {
 	 * rejects with an Error on extractor failure.
 	 */
 	extractArchive(args: IExtractArgs): Promise<void>;
+
+	/**
+	 * Best-effort check for a running FiveM.exe / RedM.exe process via
+	 * `tasklist`. The renderer-side GameClientService polls this on a
+	 * timer to drive the status-bar chip. Returns `false` on non-Windows
+	 * or if the process query fails.
+	 *
+	 * The IDE does NOT spawn the game itself — every Node-spawn shape
+	 * tried (direct, cmd /c, URL handler, PowerShell Start-Process) was
+	 * rejected by ROSLauncher's ancestor-chain check. The user launches
+	 * the game the normal way; this probe just observes.
+	 */
+	isGameClientRunning(kind: GameClientKind): Promise<boolean>;
+
+	/**
+	 * PID of the Node main process this service runs in — i.e. a stable
+	 * identifier for "the IDE instance currently writing this lock".
+	 * Recorded into the ephemeral bridge's session lock so a later
+	 * launch can probe `isProcessAlive` to decide whether the previous
+	 * IDE crashed (clean up) or is still running (leave alone).
+	 */
+	getMainProcessId(): Promise<number>;
+
+	/**
+	 * Probe whether a PID refers to a live process via `process.kill(pid, 0)`.
+	 * Used by the ephemeral bridge's crash-recovery path.
+	 *
+	 * No process-name check: a recycled PID pointing at an unrelated
+	 * process is a benign failure mode — the lock simply isn't reaped on
+	 * the next launch, and prepareSession() proceeds anyway since the
+	 * bridge folder gets overwritten / refreshed on every session start.
+	 */
+	isProcessAlive(pid: number): Promise<boolean>;
 }

@@ -24,6 +24,8 @@ import {
 	StatusbarAlignment,
 } from '../../../../services/statusbar/browser/statusbar.js';
 import { FXServerState, IFXServerService } from '../../common/fxserver.js';
+import { registerBridgeStatusBar } from '../bridge/bridgeStatusItem.js';
+import { registerGameClientStatusBar } from '../gameClient/gameClientStatusItem.js';
 import { findResourceFolder } from '../graph/fxgraphCompiler.js';
 import { registerCfxTitlebarActions } from './cfxTitlebarActions.js';
 
@@ -294,6 +296,8 @@ function formatUptime(totalSeconds: number): string {
 
 export function registerStatusBarContribution(): void {
 	registerCfxTitlebarActions();
+	registerGameClientStatusBar();
+	registerBridgeStatusBar();
 
 	Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench).registerWorkbenchContribution(
 		CfxStatusBarContribution,

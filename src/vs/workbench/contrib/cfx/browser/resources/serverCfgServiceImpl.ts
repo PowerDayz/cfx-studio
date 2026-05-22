@@ -24,6 +24,17 @@ import {
 } from '../../_shared/server-cfg/index.js';
 
 /**
+ * `.cfx/` is the IDE-owned per-workspace state dir (see
+ * `EXCLUDED_DIR_NAMES` in `resourceDiscoveryService.ts`). Anything in
+ * there — currently `bridge.cfg` (the ephemeral bridge cfg fragment)
+ * and `bridge.lock` — is never part of the user's server.cfg exec
+ * chain, so it must not trigger this service's onDidChange.
+ */
+function isCfxOwnedCfg(path: string): boolean {
+	return path.includes('/.cfx/');
+}
+
+/**
  * Workbench-side server.cfg orchestrator. Reads cfg files via IFileService,
  * delegates parsing/mutation to @cfx-studio/server-cfg, writes back through
  * IFileService. All mutations are format-preserving except for the slots
@@ -164,6 +175,28 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 		return out;
 	}
 
+	async getEndpointPort(): Promise<number | undefined> {
+		const root = await this.readRootDoc();
+		if (!root) { return undefined; }
+		const chain = await findExecChain(
+			root,
+			(p) => this.readPath(p),
+			(cfg, rel) => this.resolveRelative(cfg, rel),
+		);
+		for (const cfgPath of chain) {
+			const text = await this.readPath(cfgPath);
+			if (text === null || text === undefined) { continue; }
+			const doc = parseServerCfg(text, cfgPath);
+			for (const line of doc.lines) {
+				if (line.cmd?.kind === 'endpoint_add' && line.cmd.protocol === 'tcp') {
+					const port = extractPort(line.cmd.address);
+					if (port !== undefined) { return port; }
+				}
+			}
+		}
+		return undefined;
+	}
+
 	// ---- private helpers ----
 
 	private rebuildWatchers(): void {
@@ -174,8 +207,17 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 		this._watchers.add(this.fileService.onDidFilesChange((e) => {
 			// Conservative: any file change in the workspace might be a
 			// cfg in the exec chain. Fire onDidChange and let consumers
-			// decide whether to recompute.
-			if (e.affects(root) || [...e.rawAdded, ...e.rawUpdated, ...e.rawDeleted].some((u) => u.path.endsWith('.cfg'))) {
+			// decide whether to recompute. Exclude IDE-owned files under
+			// `.cfx/` (notably the session-scoped `.cfx/bridge.cfg`
+			// fragment) — those are never part of the user's exec chain
+			// and firing on them would trigger spurious full re-reads.
+			if (e.affects(root)) {
+				this._onDidChange.fire();
+				return;
+			}
+			const relevant = [...e.rawAdded, ...e.rawUpdated, ...e.rawDeleted]
+				.some((u) => u.path.endsWith('.cfg') && !isCfxOwnedCfg(u.path));
+			if (relevant) {
 				this._onDidChange.fire();
 			}
 		}));
@@ -234,6 +276,28 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 		}
 		return root.path;
 	}
+}
+
+/**
+ * Extract the port from an `endpoint_add_tcp` address token. Accepted
+ * forms: `0.0.0.0:30120`, `127.0.0.1:30120`, `[::]:30120`. Returns
+ * `undefined` for malformed input or out-of-range ports.
+ *
+ * Exported for unit testing (see `serverCfgServiceImpl.test.ts`); the
+ * only production caller is `getEndpointPort` above.
+ */
+export function extractPort(address: string): number | undefined {
+	// IPv6 bracketed form: [::]:30120
+	const v6 = address.match(/^\[[^\]]+\]:(\d+)$/);
+	if (v6) {
+		const n = Number(v6[1]);
+		return Number.isInteger(n) && n > 0 && n <= 65535 ? n : undefined;
+	}
+	// Final colon-separated token is the port.
+	const idx = address.lastIndexOf(':');
+	if (idx < 0) { return undefined; }
+	const n = Number(address.slice(idx + 1));
+	return Number.isInteger(n) && n > 0 && n <= 65535 ? n : undefined;
 }
 
 registerSingleton(IServerCfgService, ServerCfgService, InstantiationType.Delayed);

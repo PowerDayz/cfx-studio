@@ -9,7 +9,19 @@ import * as path from 'path';
 import minimatch from 'minimatch';
 import { createImportRuleListener } from './utils';
 
-const REPO_ROOT = path.normalize(path.join(__dirname, '../'));
+// In a git worktree the eslint-plugin-local NPM package resolves through
+// a junctioned `node_modules`, which causes its `findRulePath` walk-up
+// to land on the MAIN repo's `.eslint-plugin-local/`. That makes
+// `__dirname` here point at the main repo, so every worktree file
+// (path: `<repo>-worktrees/<slug>/src/...`) gets a relativeFilename that
+// strips the main-repo prefix and produces nonsense like
+// `worktrees/<slug>/src/...`. The rule then can't match anything and
+// reports `Missing definition` for every file in the worktree.
+// Anchoring REPO_ROOT on `process.cwd()` instead of `__dirname` makes
+// the relative-path math work regardless of which checkout's
+// `.eslint-plugin-local/` Node ended up loading — ESLint is always
+// invoked with cwd = the active checkout.
+const REPO_ROOT = path.normalize(process.cwd()) + path.sep;
 
 interface ConditionalPattern {
 	when?: 'hasBrowser' | 'hasNode' | 'hasElectron' | 'test';

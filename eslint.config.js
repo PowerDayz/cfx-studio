@@ -1063,16 +1063,19 @@ export default tseslint.config(
 					// The `~` placeholder only gets expanded for targets
 					// ending in `/~`, so we use direct globs here. Tests
 					// can import anything within cfx/ (the production
-					// code they cover) plus the vitest API.
+					// code they cover), base primitives like URI/VSBuffer
+					// (pure utilities, no service deps), plus the vitest
+					// API. Platform/workbench services intentionally NOT
+					// allowed — those need the mocha runner.
 					'target': 'src/vs/workbench/contrib/cfx/**/*.test.ts',
 					'restrictions': [
 						'vs/workbench/contrib/cfx/**/*',
-						// Pure-utility primitives from vs/base/common (URI,
+						// Pure-utility primitives from vs/base (URI,
 						// CancellationToken, Emitter, …) are dependency-free
 						// and routinely needed by tests that construct mocks
 						// or feed AgentService-style streams. Per TESTING.md:
 						// stay out of vs/platform/* and vs/workbench/services/*.
-						'vs/base/common/**/*',
+						'vs/base/**/*',
 						'vitest'
 					]
 				},

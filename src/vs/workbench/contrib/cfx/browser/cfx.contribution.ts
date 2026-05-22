@@ -38,8 +38,13 @@ registerStatusBarContribution();
 import { registerCfxTabDecoration } from './status/cfxTabDecoration.js';
 registerCfxTabDecoration();
 
-import { registerCfxBridgeInstaller } from './bridge/cfxStudioBridgeInstaller.js';
-registerCfxBridgeInstaller();
+// Side-effect import + explicit register: the module registers the
+// IEphemeralBridgeService singleton at load (session-scoped client-error
+// bridge). `registerEphemeralBridge()` additionally registers the
+// one-time migration workbench contribution that detects a legacy
+// `ensure cfx-studio-bridge` in server.cfg and offers to remove it.
+import { registerEphemeralBridge } from './bridge/ephemeralBridgeService.js';
+registerEphemeralBridge();
 
 // Side-effect import: registers ICfxToolFacade as a singleton. Must load
 // before the MCP bridge (which injects ICfxToolFacade) and before any
