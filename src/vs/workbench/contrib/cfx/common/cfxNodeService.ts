@@ -41,6 +41,8 @@ export interface IExtractArgs {
 	readonly destDir: string;
 }
 
+export type GameClientKind = 'fivem' | 'redm';
+
 export interface ICfxNodeService {
 	readonly _serviceBrand: undefined;
 
@@ -69,6 +71,19 @@ export interface ICfxNodeService {
 	 * rejects with an Error on extractor failure.
 	 */
 	extractArchive(args: IExtractArgs): Promise<void>;
+
+	/**
+	 * Best-effort check for a running FiveM.exe / RedM.exe process via
+	 * `tasklist`. The renderer-side GameClientService polls this on a
+	 * timer to drive the status-bar chip. Returns `false` on non-Windows
+	 * or if the process query fails.
+	 *
+	 * The IDE does NOT spawn the game itself — every Node-spawn shape
+	 * tried (direct, cmd /c, URL handler, PowerShell Start-Process) was
+	 * rejected by ROSLauncher's ancestor-chain check. The user launches
+	 * the game the normal way; this probe just observes.
+	 */
+	isGameClientRunning(kind: GameClientKind): Promise<boolean>;
 
 	/**
 	 * PID of the Node main process this service runs in — i.e. a stable

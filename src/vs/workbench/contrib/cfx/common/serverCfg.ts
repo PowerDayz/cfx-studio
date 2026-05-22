@@ -59,6 +59,15 @@ export interface IServerCfgService {
 	 */
 	renameEnsure(oldName: string, newName: string): Promise<void>;
 
+	/**
+	 * Port the FXServer accepts game-client connections on, parsed from
+	 * the first `endpoint_add_tcp` directive reachable via the exec chain
+	 * (TCP and UDP must match for a working FiveM/RedM endpoint, so the
+	 * TCP entry is authoritative). Returns `undefined` when no endpoint
+	 * directive is present; callers fall back to 30120.
+	 */
+	getEndpointPort(): Promise<number | undefined>;
+
 	/** Fires when any reachable cfg file changes on disk. */
 	readonly onDidChange: Event<void>;
 }

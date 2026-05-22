@@ -14,6 +14,7 @@ import {
 	IFXServerOutputEvent,
 	IFXServerExitEvent,
 	IExtractArgs,
+	GameClientKind,
 } from '../common/cfxNodeService.js';
 
 const STOP_GRACE_MS = 3000;
@@ -86,6 +87,31 @@ export class CfxNodeService extends Disposable implements ICfxNodeService {
 				try { proc.kill('SIGTERM'); } catch { /* */ }
 			}
 		}, STOP_GRACE_MS);
+	}
+
+	async isGameClientRunning(kind: GameClientKind): Promise<boolean> {
+		if (process.platform !== 'win32') {
+			return false;
+		}
+		const exeName = kind === 'redm' ? 'RedM.exe' : 'FiveM.exe';
+		try {
+			const output = await new Promise<string>((resolve, reject) => {
+				const proc = spawn('tasklist', ['/FI', `IMAGENAME eq ${exeName}`, '/NH', '/FO', 'CSV'], {
+					windowsHide: true,
+				});
+				let buf = '';
+				proc.stdout?.on('data', (b: Buffer) => { buf += b.toString('utf8'); });
+				proc.on('exit', (code) => code === 0 ? resolve(buf) : reject(new Error(`tasklist exit ${code}`)));
+				proc.on('error', reject);
+			});
+			// tasklist /NH /FO CSV emits one quoted row per match; emits
+			// "INFO: No tasks are running which match the specified criteria."
+			// (no quotes) when nothing matches. Cheapest discriminator is the
+			// presence of a quoted exe-name token.
+			return new RegExp(`^"${exeName}"`, 'm').test(output);
+		} catch {
+			return false;
+		}
 	}
 
 	async getMainProcessId(): Promise<number> {

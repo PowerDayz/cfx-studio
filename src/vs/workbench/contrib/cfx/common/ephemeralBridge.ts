@@ -3,8 +3,18 @@
  *  Licensed under the MIT License.
  *--------------------------------------------------------------------------------------------*/
 
+import { Event } from '../../../../base/common/event.js';
 import { URI } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+
+/**
+ * Bridge activity for the status-bar chip.
+ *   idle   — no bridge materialised (legacy installed bridge, user-owned
+ *            folder, hash-mismatch opt-out, or just FXServer stopped)
+ *   active — IDE-owned bridge folder is on disk + the cfg fragment is in
+ *            the FXServer's exec chain for this session
+ */
+export type BridgeState = 'idle' | 'active';
 
 /**
  * Owns the lifecycle of the session-scoped `cfx-studio-bridge` resource.
@@ -26,6 +36,16 @@ export const IEphemeralBridgeService = createDecorator<IEphemeralBridgeService>(
 
 export interface IEphemeralBridgeService {
 	readonly _serviceBrand: undefined;
+
+	/**
+	 * Current bridge activity. `'active'` after a successful
+	 * `prepareSession` that materialised the IDE-owned bridge (returned
+	 * non-empty args), `'idle'` after `endSession` or any prepareSession
+	 * path that skipped materialisation.
+	 */
+	readonly state: BridgeState;
+
+	readonly onDidChangeState: Event<BridgeState>;
 
 	/**
 	 * Called once at workbench startup. If a `.cfx/bridge.lock` is left

@@ -52,10 +52,9 @@ import {
  *   $(refresh, amber)     cfx.fxserver.restart        – state == running
  *   $(debug-restart)      cfx.resource.restartCurrent – active editor inside a Cfx resource
  *
- * The four actions live in `MenuId.LayoutControlMenu`, which renders in
- * the title-bar action toolbar (right of the centred command/search). We
- * gate visibility purely on the FXServer state ContextKey, so the cluster
- * morphs cleanly as the server lifecycle moves.
+ * Visibility is driven by the FXServer ContextKey owned by the contribution
+ * below. (The game-client and bridge surface live in the status bar — they
+ * are pure observers, no actions to attach to the title bar.)
  *
  * The "restart current resource" action resolves the active editor's URI
  * to the nearest enclosing `fxmanifest.lua` folder (re-using the helper

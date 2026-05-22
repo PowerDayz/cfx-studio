@@ -5,6 +5,7 @@
 
 import { Action } from '../../../../../base/common/actions.js';
 import { VSBuffer } from '../../../../../base/common/buffer.js';
+import { Emitter, Event } from '../../../../../base/common/event.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { joinPath } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -23,7 +24,7 @@ import {
 } from '../../../../common/contributions.js';
 import { LifecyclePhase } from '../../../../services/lifecycle/common/lifecycle.js';
 import { ICfxNodeService } from '../../common/cfxNodeService.js';
-import { IEphemeralBridgeService } from '../../common/ephemeralBridge.js';
+import { BridgeState, IEphemeralBridgeService } from '../../common/ephemeralBridge.js';
 import { IServerCfgService } from '../../common/serverCfg.js';
 
 const BRIDGE_RESOURCE_NAME = 'cfx-studio-bridge';
@@ -147,6 +148,20 @@ export function parseLock(raw: string): SessionLock | undefined {
 class EphemeralBridgeService extends Disposable implements IEphemeralBridgeService {
 	declare readonly _serviceBrand: undefined;
 
+	private _state: BridgeState = 'idle';
+	private readonly _onDidChangeState = this._register(new Emitter<BridgeState>());
+	readonly onDidChangeState: Event<BridgeState> = this._onDidChangeState.event;
+
+	get state(): BridgeState {
+		return this._state;
+	}
+
+	private transition(next: BridgeState): void {
+		if (this._state === next) { return; }
+		this._state = next;
+		this._onDidChangeState.fire(next);
+	}
+
 	constructor(
 		@IFileService private readonly fileService: IFileService,
 		@IServerCfgService private readonly serverCfgService: IServerCfgService,
@@ -226,12 +241,14 @@ class EphemeralBridgeService extends Disposable implements IEphemeralBridgeServi
 			await this.materialiseBridge(paths);
 			await this.writeCfgFragment(paths);
 			await this.writeLock(paths.lock, { v: 1, idePid, writtenAt: new Date().toISOString() });
+			this.transition('active');
 			return ['+exec', '.cfx/bridge.cfg'];
 		} catch (err) {
 			this.logService.error('[cfx] ephemeral bridge: prepareSession failed', err);
 			// Best-effort rollback: if we wrote partial state, try to
 			// reap it so the next start isn't confused.
 			await this.cleanupArtefacts(paths);
+			this.transition('idle');
 			throw err;
 		}
 	}
@@ -255,6 +272,7 @@ class EphemeralBridgeService extends Disposable implements IEphemeralBridgeServi
 			return;
 		}
 		await this.cleanupArtefacts(paths);
+		this.transition('idle');
 	}
 
 	// ---- private helpers ----

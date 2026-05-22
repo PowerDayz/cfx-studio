@@ -153,6 +153,28 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 		await this.addEnsure(newName);
 	}
 
+	async getEndpointPort(): Promise<number | undefined> {
+		const root = await this.readRootDoc();
+		if (!root) { return undefined; }
+		const chain = await findExecChain(
+			root,
+			(p) => this.readPath(p),
+			(cfg, rel) => this.resolveRelative(cfg, rel),
+		);
+		for (const cfgPath of chain) {
+			const text = await this.readPath(cfgPath);
+			if (text === null || text === undefined) { continue; }
+			const doc = parseServerCfg(text, cfgPath);
+			for (const line of doc.lines) {
+				if (line.cmd?.kind === 'endpoint_add' && line.cmd.protocol === 'tcp') {
+					const port = extractPort(line.cmd.address);
+					if (port !== undefined) { return port; }
+				}
+			}
+		}
+		return undefined;
+	}
+
 	// ---- private helpers ----
 
 	private rebuildWatchers(): void {
@@ -232,6 +254,28 @@ class ServerCfgService extends Disposable implements IServerCfgService {
 		}
 		return root.path;
 	}
+}
+
+/**
+ * Extract the port from an `endpoint_add_tcp` address token. Accepted
+ * forms: `0.0.0.0:30120`, `127.0.0.1:30120`, `[::]:30120`. Returns
+ * `undefined` for malformed input or out-of-range ports.
+ *
+ * Exported for unit testing (see `serverCfgServiceImpl.test.ts`); the
+ * only production caller is `getEndpointPort` above.
+ */
+export function extractPort(address: string): number | undefined {
+	// IPv6 bracketed form: [::]:30120
+	const v6 = address.match(/^\[[^\]]+\]:(\d+)$/);
+	if (v6) {
+		const n = Number(v6[1]);
+		return Number.isInteger(n) && n > 0 && n <= 65535 ? n : undefined;
+	}
+	// Final colon-separated token is the port.
+	const idx = address.lastIndexOf(':');
+	if (idx < 0) { return undefined; }
+	const n = Number(address.slice(idx + 1));
+	return Number.isInteger(n) && n > 0 && n <= 65535 ? n : undefined;
 }
 
 registerSingleton(IServerCfgService, ServerCfgService, InstantiationType.Delayed);
