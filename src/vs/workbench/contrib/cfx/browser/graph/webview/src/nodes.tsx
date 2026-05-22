@@ -42,6 +42,16 @@ interface FlowData extends Record<string, unknown> {
 	 * usually wrong at runtime, hence the visual flag.
 	 */
 	missingPins?: ReadonlySet<string>;
+	/**
+	 * True when at least one error-severity diagnostic is attached to
+	 * this node (exec cycle, value cycle, invalid identifier, etc).
+	 * Renderers add the `has-error` class which draws a red ring.
+	 */
+	hasError?: boolean;
+}
+
+function bnodeClass(kind: string, data: FlowData): string {
+	return `bnode kind-${kind}${data.hasError ? ' has-error' : ''}`;
 }
 
 const PIN_COLOR: Record<string, string> = {
@@ -87,7 +97,7 @@ const EventNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const eventName = n.event || (n as { eventName?: string }).eventName || '???';
 	const out = n.outExec[0];
 	return (
-		<div className="bnode kind-event">
+		<div className={bnodeClass('event', data)}>
 			<div className="header">
 				<span>⚡ on {eventName}</span>
 			</div>
@@ -109,7 +119,7 @@ const ExecCallNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'exec-call' }>;
 	const title = n.callee === 'invoke_native' && n.nativeName ? nativeDisplay(n.nativeName) : n.callee;
 	return (
-		<div className="bnode kind-exec-call">
+		<div className={bnodeClass('exec-call', data)}>
 			<div className="header">
 				<span>{title}</span>
 				{n.nativeHash && <span style={{ fontSize: 10, opacity: 0.7 }}>{n.nativeHash}</span>}
@@ -148,7 +158,7 @@ const ExecCallNode: React.FC<{ data: FlowData }> = ({ data }) => {
 const ControlNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'control' }>;
 	return (
-		<div className="bnode kind-control">
+		<div className={bnodeClass('control', data)}>
 			<div className="header">
 				<span>{n.op}</span>
 			</div>
@@ -182,7 +192,7 @@ const PureNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'pure' }>;
 	const title = n.callee === 'invoke_native' && n.nativeName ? nativeDisplay(n.nativeName) : n.callee;
 	return (
-		<div className="bnode kind-pure">
+		<div className={bnodeClass('pure', data)}>
 			<div className="header"><span>{title}</span></div>
 			{n.argPins.map((p) => (
 				<PinRow
@@ -206,7 +216,7 @@ const PureNode: React.FC<{ data: FlowData }> = ({ data }) => {
 const LiteralNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'literal' }>;
 	return (
-		<div className="bnode kind-literal">
+		<div className={bnodeClass('literal', data)}>
 			<div className="header"><span>{n.valueType} literal</span></div>
 			<div className="pin-row">
 				<div className="pin left" style={{ paddingLeft: 12 }}>
@@ -228,7 +238,7 @@ const LiteralNode: React.FC<{ data: FlowData }> = ({ data }) => {
 const VarGetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'var-get' }>;
 	return (
-		<div className="bnode kind-var-get">
+		<div className={bnodeClass('var-get', data)}>
 			<div className="header"><span>get {n.name}</span></div>
 			<div className="pin-row">
 				<div />
@@ -244,7 +254,7 @@ const VarGetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 const VarSetNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'var-set' }>;
 	return (
-		<div className="bnode kind-var-set">
+		<div className={bnodeClass('var-set', data)}>
 			<div className="header"><span>set {n.name}</span></div>
 			<div className="pin-row exec">
 				<div className="pin left">
@@ -272,7 +282,7 @@ const CommandNode: React.FC<{ data: FlowData }> = ({ data }) => {
 	const n = data.bnode as Extract<BNode, { kind: 'command' }>;
 	const out = n.outExec[0];
 	return (
-		<div className="bnode kind-command">
+		<div className={bnodeClass('command', data)}>
 			<div className="header">
 				<span>⚙ /{n.command || '???'}</span>
 				{n.restricted && <span style={{ fontSize: 10, opacity: 0.7 }}>restricted</span>}
@@ -315,7 +325,7 @@ const CommentNode: React.FC<{ data: FlowData; selected?: boolean }> = ({ data, s
 				}}
 			/>
 			<div
-				className="bnode kind-comment"
+				className={bnodeClass('comment', data)}
 				style={{
 					width: w,
 					height: h,
