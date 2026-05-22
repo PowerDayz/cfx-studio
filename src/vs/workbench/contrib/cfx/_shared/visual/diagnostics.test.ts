@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import { GRAPH_DOC_VERSION, type GraphDoc, type EventBNode, type ExecCallBNode, type PureBNode, type VarGetBNode, type VarSetBNode, type ExecEdge, type ValueEdge, type BNode, type PinDef, type ExecOutDef } from './doc.js';
 import type { EditorType } from './types.js';
-import { analyze, CROSS_CONTEXT_CALLEES, GraphDiagnosticSeverity, isCrossContextSend, pinKey } from './diagnostics.js';
+import { analyze, CROSS_CONTEXT_CALLEES, TrustDiagnosticSeverity, isCrossContextSend, pinKey } from './diagnostics.js';
 
 // ─── Builders ────────────────────────────────────────────────────────────
 
@@ -204,7 +204,7 @@ describe('analyze → net-handler-no-source-check', () => {
 		const d = doc('server', [ev, setX], [execEdge('e0', { node: 'ev', pin: 'ev:next' }, { node: 's' })]);
 		const diags = analyze(d).filter((x) => x.ruleId === 'net-handler-no-source-check');
 		expect(diags).toHaveLength(1);
-		expect(diags[0].severity).toBe(GraphDiagnosticSeverity.Info);
+		expect(diags[0].severity).toBe(TrustDiagnosticSeverity.Info);
 		expect(diags[0].nodeId).toBe('ev');
 	});
 
@@ -226,7 +226,7 @@ describe('analyze → entity-on-net-trigger', () => {
 		const d = doc('client', [trigger], []);
 		const diags = analyze(d).filter((x) => x.ruleId === 'entity-on-net-trigger');
 		expect(diags).toHaveLength(1);
-		expect(diags[0].severity).toBe(GraphDiagnosticSeverity.Error);
+		expect(diags[0].severity).toBe(TrustDiagnosticSeverity.Error);
 		expect(diags[0].nodeId).toBe('t');
 		expect(diags[0].pinId).toBe('t:a0');
 	});

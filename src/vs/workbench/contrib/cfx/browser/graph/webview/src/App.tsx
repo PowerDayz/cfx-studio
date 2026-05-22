@@ -31,12 +31,14 @@ import type {
 import { emptyGraphDoc, nextEdgeId } from '../../../../_shared/visual/doc.js';
 import { nodeVarSet, nodeVarGet, nodeCustomEvent, nodeCommand, nodeTriggerEvent } from '../../../../_shared/visual/sig-to-node.js';
 import { isAssignable, type EditorType } from '../../../../_shared/visual/types.js';
-import type { GraphDiagnostic } from '../../../../_shared/visual/diagnostics.js';
+import type { GraphDiagnostic, TrustDiagnostic } from '../../../../_shared/visual/diagnostics.js';
 
 import { vscode } from './messages';
 import { NODE_TYPES } from './nodes.js';
 import { RadialMenu } from './RadialMenu/RadialMenu.js';
 import type { SeedInfo } from './RadialMenu/itemBuilders.js';
+import { DiagnosticsBanner } from './DiagnosticsBanner.js';
+import { LuaPreview } from './LuaPreview.js';
 import './styles.css';
 
 interface FlowNodeData extends Record<string, unknown> {
@@ -48,7 +50,14 @@ interface FlowNodeData extends Record<string, unknown> {
 	 * The node renderer picks the highest severity and applies a
 	 * border + tooltip listing the messages.
 	 */
-	nodeDiagnostics?: ReadonlyArray<GraphDiagnostic>;
+	nodeDiagnostics?: ReadonlyArray<TrustDiagnostic>;
+	/**
+	 * True when at least one error-severity codegen / migration
+	 * diagnostic is attached to this node (exec cycle, value cycle,
+	 * invalid identifier, etc). Renderers add the `has-error` class
+	 * which draws a red ring.
+	 */
+	hasError?: boolean;
 }
 
 const PIN_COLOR_MAP: Record<string, string> = {
@@ -94,20 +103,20 @@ const HISTORY_LIMIT = 50;
 
 function EditorInner() {
 	const [doc, setDoc] = useState<GraphDoc>(() => emptyGraphDoc());
-	// Diagnostics for the open .fxgraph, replaced wholesale on each
-	// host `diagnostics` message. Keyed by source nodeId so the node
-	// renderer can look up its own entries without scanning the full
-	// list per render.
-	const [diagnostics, setDiagnostics] = useState<ReadonlyArray<GraphDiagnostic>>([]);
-	const diagnosticsByNode = useMemo(() => {
-		const map = new Map<string, GraphDiagnostic[]>();
-		for (const d of diagnostics) {
+	// Trust-analyzer diagnostics for the open .fxgraph, replaced
+	// wholesale on each host `trust-diagnostics` message. Keyed by
+	// source nodeId so the node renderer can look up its own entries
+	// without scanning the full list per render.
+	const [trustDiagnostics, setTrustDiagnostics] = useState<ReadonlyArray<TrustDiagnostic>>([]);
+	const trustDiagnosticsByNode = useMemo(() => {
+		const map = new Map<string, TrustDiagnostic[]>();
+		for (const d of trustDiagnostics) {
 			if (!d.nodeId) { continue; }
 			const list = map.get(d.nodeId);
 			if (list) { list.push(d); } else { map.set(d.nodeId, [d]); }
 		}
 		return map;
-	}, [diagnostics]);
+	}, [trustDiagnostics]);
 	// The radial is the only quick-add palette. Triggered three ways:
 	//   - Space (centre on viewport, browse mode at the outer ring)
 	//   - Right-click on the canvas (anchored at cursor, same)
@@ -206,20 +215,58 @@ function EditorInner() {
 		updateDoc((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === next.id ? next : n)) }));
 	}, [updateDoc]);
 
+	// Race-guard: the most recent `init` version observed. `diagnostics`
+	// and `lua-preview` messages with an older docVersion are dropped —
+	// they belong to a previously-loaded document still in flight.
+	const docVersionRef = useRef<number>(0);
+	const [diagnostics, setDiagnostics] = useState<readonly GraphDiagnostic[]>([]);
+	const [luaPreview, setLuaPreview] = useState<string>('');
+	const [luaPreviewVisible, setLuaPreviewVisible] = useState<boolean>(false);
 	useEffect(() => {
 		const handler = (e: MessageEvent) => {
-			const msg = e.data as { type: string; doc?: GraphDoc; diagnostics?: ReadonlyArray<GraphDiagnostic> };
+			const msg = e.data as {
+				type: string;
+				doc?: GraphDoc;
+				docVersion?: number;
+				diagnostics?: readonly (GraphDiagnostic | TrustDiagnostic)[];
+				source?: string;
+			};
 			if (msg && msg.type === 'init' && msg.doc) {
 				// Loading a different doc resets history — undo/redo
 				// across document boundaries would be confusing.
 				pastRef.current = [];
 				futureRef.current = [];
-				setDoc(msg.doc as GraphDoc);
-				// Drop stale diagnostics when switching documents; the
-				// host re-sends a fresh set right after init.
+				docVersionRef.current = msg.docVersion ?? 0;
 				setDiagnostics([]);
-			} else if (msg && msg.type === 'diagnostics') {
-				setDiagnostics(msg.diagnostics ?? []);
+				// Drop stale trust diagnostics when switching documents;
+				// the host re-sends a fresh set right after init.
+				setTrustDiagnostics([]);
+				setLuaPreview('');
+				setDoc(msg.doc as GraphDoc);
+				return;
+			}
+			if (msg && msg.type === 'diagnostics') {
+				const v = msg.docVersion ?? 0;
+				if (v < docVersionRef.current) {
+					// Stale result for a previous document — ignore.
+					return;
+				}
+				setDiagnostics((msg.diagnostics ?? []) as readonly GraphDiagnostic[]);
+				return;
+			}
+			if (msg && msg.type === 'trust-diagnostics') {
+				// Trust diagnostics aren't versioned (the per-URI
+				// service serialises them) but switching tabs resets
+				// the state on `init`, so a late reply for the prior
+				// doc cannot land here unless the URI matches.
+				setTrustDiagnostics((msg.diagnostics ?? []) as readonly TrustDiagnostic[]);
+				return;
+			}
+			if (msg && msg.type === 'lua-preview') {
+				const v = msg.docVersion ?? 0;
+				if (v < docVersionRef.current) { return; }
+				setLuaPreview(msg.source ?? '');
+				return;
 			}
 		};
 		window.addEventListener('message', handler);
@@ -227,6 +274,22 @@ function EditorInner() {
 		// holds a `pendingInit` buffer that drains on this signal.
 		vscode?.postMessage({ type: 'ready' });
 		return () => window.removeEventListener('message', handler);
+	}, []);
+
+	// Derived set of node ids that have at least one error-severity
+	// diagnostic. Used by the node renderer to add a red ring.
+	const errorNodeIds = useMemo(() => {
+		const s = new Set<string>();
+		for (const d of diagnostics) {
+			if (d.severity === 'error' && d.nodeId) { s.add(d.nodeId); }
+		}
+		return s;
+	}, [diagnostics]);
+
+	const focusNodeFromDiagnostic = useCallback((nodeId: string) => {
+		const flow = flowRef.current;
+		if (!flow) { return; }
+		flow.fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.3 });
 	}, []);
 
 	const [nodes, setNodes, onNodesChangeRaw] = useNodesState<RFNode<FlowNodeData>>([]);
@@ -275,7 +338,13 @@ function EditorInner() {
 					id: bn.id,
 					type: 'blueprint',
 					position: prior?.dragging && prior.position ? prior.position : persistedPos,
-					data: { bnode: bn, onPatch: patchNode, missingPins, nodeDiagnostics: diagnosticsByNode.get(bn.id) },
+					data: {
+						bnode: bn,
+						onPatch: patchNode,
+						missingPins,
+						nodeDiagnostics: trustDiagnosticsByNode.get(bn.id),
+						hasError: errorNodeIds.has(bn.id),
+					},
 					deletable: bn.kind !== 'event' || doc.nodes.filter((n) => n.kind === 'event').length > 1,
 					// Comments behave as a background label: the inner body
 					// is click-through (`pointer-events: none`), and the
@@ -288,7 +357,7 @@ function EditorInner() {
 				};
 			}),
 		);
-	}, [doc, patchNode, missingPins, diagnosticsByNode, setNodes]);
+	}, [doc, patchNode, missingPins, trustDiagnosticsByNode, errorNodeIds, setNodes]);
 
 	// Exec edges render as animated dashed white "thread of execution"
 	// lines (the deprecated editor's signature look). Value edges use a
@@ -888,6 +957,13 @@ function EditorInner() {
 					title="Register a /command — opens the command-name + params dialog (also Shift+C)"
 				>+ Command</button>
 				<button onClick={autoArrange} title="Lay out nodes left-to-right by exec flow">Auto-arrange</button>
+				<button
+					onClick={() => setLuaPreviewVisible((v) => !v)}
+					title="Toggle the read-only Lua preview overlay"
+					style={luaPreviewVisible ? { background: 'var(--vscode-button-background, #0e639c)', color: 'var(--vscode-button-foreground, #fff)' } : undefined}
+				>
+					Lua preview
+				</button>
 				<button onClick={() => openRadialAt(window.innerWidth / 2, window.innerHeight / 2)}>+ Add Node (Space)</button>
 			</div>
 			<div
@@ -897,6 +973,8 @@ function EditorInner() {
 				onMouseUp={onCanvasMouseUp}
 				onContextMenu={onCanvasContextMenu}
 			>
+				<DiagnosticsBanner diagnostics={diagnostics} onSelectNode={focusNodeFromDiagnostic} />
+				<LuaPreview source={luaPreview} visible={luaPreviewVisible} onClose={() => setLuaPreviewVisible(false)} />
 				<ReactFlow
 					nodes={nodes}
 					edges={edges}
@@ -987,6 +1065,7 @@ function EditorInner() {
 					mode={varModal.mode}
 					defaultName={varModal.defaultName}
 					defaultType={varModal.defaultType}
+					existingNames={(doc.variables ?? []).map((v) => v.name)}
 					onCancel={() => setVarModal(null)}
 					onSubmit={(name, type) => {
 						if (varModal.mode === 'declare') {
@@ -1078,11 +1157,13 @@ interface VariableModalProps {
 	mode: 'declare' | 'promote';
 	defaultName: string;
 	defaultType: EditorType;
+	/** Names of variables already declared in the doc — surfaces a "will replace" hint. */
+	existingNames: readonly string[];
 	onCancel: () => void;
 	onSubmit: (name: string, type: EditorType) => void;
 }
 
-const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaultType, onCancel, onSubmit }) => {
+const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaultType, existingNames, onCancel, onSubmit }) => {
 	const [name, setName] = useState(defaultName);
 	const [type, setType] = useState<EditorType>(defaultType);
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -1090,10 +1171,23 @@ const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaul
 		inputRef.current?.focus();
 		inputRef.current?.select();
 	}, []);
+	const trimmed = name.trim();
+	const validationError = ((): string | null => {
+		if (trimmed.length === 0) {
+			return 'Name is required.';
+		}
+		if (!/^[A-Za-z_][\w]*$/.test(trimmed)) {
+			return 'Must start with a letter or underscore and contain only letters, digits, and underscores.';
+		}
+		return null;
+	})();
+	// Existing-name collision is informational only — the surrounding
+	// updateDoc replaces by name, which is the desired "redefine"
+	// semantics. Surface it so the user knows they're overwriting.
+	const collision = !validationError && existingNames.includes(trimmed);
 	const submit = () => {
-		const safe = name.trim().match(/^[A-Za-z_][\w]*$/);
-		if (!safe) return;
-		onSubmit(name.trim(), type);
+		if (validationError) { return; }
+		onSubmit(trimmed, type);
 	};
 	return (
 		<div className="shortcuts-modal" onClick={onCancel}>
@@ -1107,7 +1201,11 @@ const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaul
 						<input
 							ref={inputRef}
 							className="inline-input"
-							style={{ maxWidth: 'none', padding: '4px 8px' }}
+							style={{
+								maxWidth: 'none',
+								padding: '4px 8px',
+								borderColor: validationError ? 'var(--vscode-inputValidation-errorBorder, #be1100)' : undefined,
+							}}
 							value={name}
 							onChange={(e) => setName(e.target.value)}
 							onKeyDown={(e) => {
@@ -1115,7 +1213,29 @@ const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaul
 								if (e.key === 'Escape') onCancel();
 							}}
 							placeholder="e.g. myCar"
+							aria-invalid={validationError != null}
 						/>
+						{validationError && (
+							<span
+								role="alert"
+								style={{
+									fontSize: 11,
+									color: 'var(--vscode-errorForeground, #f48771)',
+								}}
+							>
+								{validationError}
+							</span>
+						)}
+						{collision && (
+							<span
+								style={{
+									fontSize: 11,
+									color: 'var(--vscode-editorWarning-foreground, #cca700)',
+								}}
+							>
+								A variable named "{trimmed}" already exists — submitting will replace it.
+							</span>
+						)}
 					</label>
 					<label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
 						<span style={{ fontSize: 11, opacity: 0.75 }}>Type</span>
@@ -1135,9 +1255,12 @@ const VariableModal: React.FC<VariableModalProps> = ({ mode, defaultName, defaul
 					<button onClick={onCancel}>Cancel</button>
 					<button
 						onClick={submit}
+						disabled={validationError != null}
 						style={{
-							background: 'var(--vscode-button-background, #0e639c)',
-							color: 'var(--vscode-button-foreground, #fff)',
+							background: validationError ? undefined : 'var(--vscode-button-background, #0e639c)',
+							color: validationError ? undefined : 'var(--vscode-button-foreground, #fff)',
+							opacity: validationError ? 0.5 : 1,
+							cursor: validationError ? 'not-allowed' : 'pointer',
 						}}
 					>
 						{mode === 'declare' ? 'Declare' : 'Promote'}

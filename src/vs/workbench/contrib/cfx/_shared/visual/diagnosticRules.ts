@@ -17,8 +17,8 @@ import type { BNode, EventBNode } from './doc.js';
 import type { EditorType } from './types.js';
 import {
 	type AnalysisContext,
-	type GraphDiagnostic,
-	GraphDiagnosticSeverity,
+	type TrustDiagnostic,
+	TrustDiagnosticSeverity,
 	isCrossContextSend,
 	pinKey,
 } from './diagnostics.js';
@@ -46,7 +46,7 @@ const SOURCE_CHECK_FRAGMENTS: ReadonlyArray<string> = [
 	'GetPlayerLastMsg',
 ];
 
-export function runRules(ctx: AnalysisContext): GraphDiagnostic[] {
+export function runRules(ctx: AnalysisContext): TrustDiagnostic[] {
 	return [
 		...ruleEntityOnNetTrigger(ctx),
 		...ruleUntrustedToCrossContextSend(ctx),
@@ -61,8 +61,8 @@ export function runRules(ctx: AnalysisContext): GraphDiagnostic[] {
  * (one client passing another's entity id). The graceful fix is to
  * convert via `NetworkGetNetworkIdFromEntity` before the trigger.
  */
-export function ruleEntityOnNetTrigger(ctx: AnalysisContext): GraphDiagnostic[] {
-	const out: GraphDiagnostic[] = [];
+export function ruleEntityOnNetTrigger(ctx: AnalysisContext): TrustDiagnostic[] {
+	const out: TrustDiagnostic[] = [];
 	for (const node of ctx.doc.nodes) {
 		if (!isCrossContextSend(node)) { continue; }
 		const isNetTrigger =
@@ -76,7 +76,7 @@ export function ruleEntityOnNetTrigger(ctx: AnalysisContext): GraphDiagnostic[] 
 			if (!ENTITY_HANDLE_TYPES.has(pin.type)) { continue; }
 			out.push({
 				ruleId: 'entity-on-net-trigger',
-				severity: GraphDiagnosticSeverity.Error,
+				severity: TrustDiagnosticSeverity.Error,
 				message:
 					`Entity handle "${pin.name}" cannot cross the network; the receiver gets a meaningless integer. ` +
 					`Convert with NetworkGetNetworkIdFromEntity on the sender and NetworkGetEntityFromNetworkId on the receiver.`,
@@ -98,9 +98,9 @@ export function ruleEntityOnNetTrigger(ctx: AnalysisContext): GraphDiagnostic[] 
  * the item. ValidateBNode (Slice 2) will clear this diagnostic when
  * placed on the path.
  */
-export function ruleUntrustedToCrossContextSend(ctx: AnalysisContext): GraphDiagnostic[] {
+export function ruleUntrustedToCrossContextSend(ctx: AnalysisContext): TrustDiagnostic[] {
 	if (ctx.untrustedPins.size === 0) { return []; }
-	const out: GraphDiagnostic[] = [];
+	const out: TrustDiagnostic[] = [];
 	const seen = new Set<string>(); // dedupe by (nodeId|pinId)
 	for (const node of ctx.doc.nodes) {
 		if (!isCrossContextSend(node)) { continue; }
@@ -111,7 +111,7 @@ export function ruleUntrustedToCrossContextSend(ctx: AnalysisContext): GraphDiag
 			seen.add(key);
 			out.push({
 				ruleId: 'untrusted-to-cross-context-send',
-				severity: GraphDiagnosticSeverity.Warning,
+				severity: TrustDiagnosticSeverity.Warning,
 				message:
 					`Value flowing into "${pin.name}" originated from a client-supplied net event payload ` +
 					`and reaches a cross-context send without validation. Add a validation step that checks ` +
@@ -137,9 +137,9 @@ export function ruleUntrustedToCrossContextSend(ctx: AnalysisContext): GraphDiag
  * isn't needed. The diagnostic exists to make the omission visible,
  * not to block.
  */
-export function ruleNetHandlerNoSourceCheck(ctx: AnalysisContext): GraphDiagnostic[] {
+export function ruleNetHandlerNoSourceCheck(ctx: AnalysisContext): TrustDiagnostic[] {
 	if (ctx.doc.scope !== 'server') { return []; }
-	const out: GraphDiagnostic[] = [];
+	const out: TrustDiagnostic[] = [];
 
 	for (const node of ctx.doc.nodes) {
 		if (node.kind !== 'event') { continue; }
@@ -148,7 +148,7 @@ export function ruleNetHandlerNoSourceCheck(ctx: AnalysisContext): GraphDiagnost
 		if (chainReferencesSourceCheck(ctx, ev)) { continue; }
 		out.push({
 			ruleId: 'net-handler-no-source-check',
-			severity: GraphDiagnosticSeverity.Info,
+			severity: TrustDiagnosticSeverity.Info,
 			message:
 				`Net event "${ev.event}" does not inspect the player identity (source) before acting. ` +
 				`If the handler mutates state for a specific player, validate identity with ` +

@@ -18,7 +18,7 @@ import { GRAPH_DOC_VERSION, type BNode, type ControlBNode, type EventBNode, type
 import type { EditorType } from './types.js';
 import {
 	type AnalysisContext,
-	GraphDiagnosticSeverity,
+	TrustDiagnosticSeverity,
 	pinKey,
 } from './diagnostics.js';
 import {
@@ -127,7 +127,7 @@ describe('ruleEntityOnNetTrigger', () => {
 			const diags = ruleEntityOnNetTrigger(ctx({ nodes: [trigger] }));
 			expect(diags).toHaveLength(1);
 			expect(diags[0].ruleId).toBe('entity-on-net-trigger');
-			expect(diags[0].severity).toBe(GraphDiagnosticSeverity.Error);
+			expect(diags[0].severity).toBe(TrustDiagnosticSeverity.Error);
 			expect(diags[0].pinId).toBe('t:a0');
 		},
 	);
@@ -199,7 +199,7 @@ describe('ruleNetHandlerNoSourceCheck', () => {
 		const diags = ruleNetHandlerNoSourceCheck(ctx({ nodes: [ev, other], execEdges: edges }));
 		expect(diags).toHaveLength(1);
 		expect(diags[0].ruleId).toBe('net-handler-no-source-check');
-		expect(diags[0].severity).toBe(GraphDiagnosticSeverity.Info);
+		expect(diags[0].severity).toBe(TrustDiagnosticSeverity.Info);
 		expect(diags[0].nodeId).toBe('ev');
 	});
 
@@ -243,7 +243,7 @@ describe('ruleUntrustedToCrossContextSend', () => {
 		}));
 		expect(diags).toHaveLength(1);
 		expect(diags[0].ruleId).toBe('untrusted-to-cross-context-send');
-		expect(diags[0].severity).toBe(GraphDiagnosticSeverity.Warning);
+		expect(diags[0].severity).toBe(TrustDiagnosticSeverity.Warning);
 		expect(diags[0].nodeId).toBe('t');
 		expect(diags[0].pinId).toBe('t:a0');
 	});

@@ -30,8 +30,9 @@ import { ICfxGraphDiagnosticsService } from '../../common/cfxGraphDiagnostics.js
 import type { HostToWebviewMessage, WebviewToHostMessage } from '../../common/fxgraphMessages.js';
 import { FxGraphEditorInput } from './fxgraphEditorInput.js';
 import { generateLua } from '../../_shared/visual/codegen.js';
-import { analyze } from '../../_shared/visual/diagnostics.js';
+import { analyze, GraphDiagnosticCollector } from '../../_shared/visual/diagnostics.js';
 import { isGraphDoc, type GraphDoc } from '../../_shared/visual/doc.js';
+import { migrateGraphDoc } from '../../_shared/visual/migrate.js';
 
 const MEDIA_DIR_REL = 'vs/workbench/contrib/cfx/browser/graph/media/fxgraph';
 
@@ -41,11 +42,11 @@ const MEDIA_DIR_REL = 'vs/workbench/contrib/cfx/browser/graph/media/fxgraph';
  * `media/fxgraph/`. On `setInput`, the file is read, parsed as JSON,
  * and posted to the webview as the `init` message together with the
  * resource's resolved game mode. Subsequent `change` messages from the
- * webview update the in-memory doc; the EditorInput's dirty flag is
- * intentionally left unset for now — saves go through the existing
- * `cfx.fxgraph.compile` action which writes both the .fxgraph and the
- * sibling .lua. Implementing a `model.save()` round-trip is a separate
- * follow-up.
+ * webview update the in-memory doc; the pane keeps a 300ms debounce on
+ * those changes before writing the canonical `.fxgraph` JSON and
+ * regenerating the sibling `.lua`. The input's dirty flag is set on
+ * change and cleared on a successful write so the tab title reflects
+ * unsaved state and Ctrl+S can force-flush the debounce synchronously.
  */
 export class FxGraphEditorPane extends EditorPane {
 
@@ -57,9 +58,24 @@ export class FxGraphEditorPane extends EditorPane {
 	private webviewReady = false;
 	private pendingInit: HostToWebviewMessage | undefined;
 	private currentResource: import('../../../../../base/common/uri.js').URI | undefined;
+	private currentInput: FxGraphEditorInput | undefined;
 	private currentScope: 'client' | 'server' | 'shared' = 'client';
 	private saveTimer: ReturnType<typeof setTimeout> | undefined;
 	private pendingSaveDoc: unknown;
+	/**
+	 * URI we've most recently surfaced a save-failure notification for.
+	 * Used to dedupe toasts when autosave keeps failing (e.g. the file
+	 * is locked by another process and every 300 ms debounce retries).
+	 * Cleared on the next successful write so the user sees a fresh
+	 * notification if it fails again later.
+	 */
+	private lastSaveErrorUri: string | undefined;
+	/**
+	 * Monotonic per-pane document version. Bumped on every `setInput` so
+	 * the webview can ignore in-flight `diagnostics` and `lua-preview`
+	 * messages that belong to a previous document.
+	 */
+	private docVersion = 0;
 
 	constructor(
 		group: IEditorGroup,
@@ -75,14 +91,16 @@ export class FxGraphEditorPane extends EditorPane {
 		@ICfxGraphDiagnosticsService private readonly diagnosticsService: ICfxGraphDiagnosticsService,
 	) {
 		super(FxGraphEditorPane.ID, group, telemetryService, themeService, storageService);
-		// Forward diagnostics to the webview whenever the service emits
-		// for the open URI. Covers both our own publishes from
-		// `flushSave` and any external publishes (e.g. a peer file
-		// changing in a future cross-graph rule).
+		// Forward trust-analyzer diagnostics to the webview whenever the
+		// service emits for the open URI. Covers both our own publishes
+		// from `flushSave` and any external publishes (e.g. a peer file
+		// changing in a future cross-graph rule). Goes over the dedicated
+		// `trust-diagnostics` channel so it doesn't collide with the
+		// codegen `diagnostics` channel posted directly from `flushSave`.
 		this._register(this.diagnosticsService.onDidChangeDiagnostics((e) => {
 			if (!this.currentResource) { return; }
 			if (e.resource.toString() !== this.currentResource.toString()) { return; }
-			this.postIfReady({ type: 'diagnostics', diagnostics: e.diagnostics });
+			this.postIfReady({ type: 'trust-diagnostics', diagnostics: e.diagnostics });
 		}));
 	}
 
@@ -108,6 +126,9 @@ export class FxGraphEditorPane extends EditorPane {
 		}
 
 		this.currentResource = input.resource;
+		this.currentInput = input;
+		this.docVersion++;
+		input.setSaveHandler(() => this.forceFlushSave());
 
 		try {
 			this.ensureWebview();
@@ -117,12 +138,24 @@ export class FxGraphEditorPane extends EditorPane {
 			return;
 		}
 
-		// Read + parse the .fxgraph file.
-		let doc: unknown;
+		// Read + parse + migrate the .fxgraph file. The migrator validates
+		// the shape and gives us a typed `GraphDoc` instead of an unsafe
+		// cast; any failure routes through diagnostics so the user sees
+		// the same banner UX as codegen errors.
+		let doc: GraphDoc;
 		try {
 			const content = await this.fileService.readFile(input.resource);
 			if (token.isCancellationRequested) { return; }
-			doc = JSON.parse(content.value.toString());
+			const raw = JSON.parse(content.value.toString());
+			const diags = new GraphDiagnosticCollector();
+			const migrated = migrateGraphDoc(raw, diags);
+			if (!migrated) {
+				const reasons = diags.all().map((d) => d.message).join('; ') || 'unknown error';
+				this.logService.error(`[cfx] migrateGraphDoc failed for ${input.resource.toString()}: ${reasons}`);
+				this.notificationService.error(localize('cfx.fxgraph.migrateFailed', 'Cfx: failed to load {0}: {1}', input.resource.path, reasons));
+				return;
+			}
+			doc = migrated;
 		} catch (err) {
 			this.logService.error(`[cfx] failed to read .fxgraph ${input.resource.toString()}`, err);
 			this.notificationService.error(localize('cfx.fxgraph.readFailed', 'Cfx: failed to load {0}: {1}', input.resource.path, String(err)));
@@ -131,15 +164,14 @@ export class FxGraphEditorPane extends EditorPane {
 
 		// Track the doc's declared scope so palette native searches can
 		// be filtered (client / server / shared).
-		const scope = (doc as { scope?: string } | undefined)?.scope;
-		this.currentScope = scope === 'server' || scope === 'shared' ? scope : 'client';
+		this.currentScope = doc.scope === 'server' || doc.scope === 'shared' ? doc.scope : 'client';
 
 		// Resolve per-resource game mode (walks up to fxmanifest.lua).
 		const folder = input.resource.with({ path: input.resource.path.replace(/\/[^/]+$/, '') });
 		const mode = await this.gameModeService.getResourceMode(folder);
 		if (token.isCancellationRequested) { return; }
 
-		const init: HostToWebviewMessage = { type: 'init', doc, gameMode: mode };
+		const init: HostToWebviewMessage = { type: 'init', docVersion: this.docVersion, doc, gameMode: mode };
 		if (this.webviewReady) {
 			this.webviewMD.value?.postMessage(init);
 		} else {
@@ -166,24 +198,66 @@ export class FxGraphEditorPane extends EditorPane {
 	override clearInput(): void {
 		// Flush any pending save before tearing the webview down so the
 		// user doesn't lose the last edit when they switch tabs.
-		if (this.saveTimer) {
-			clearTimeout(this.saveTimer);
-			this.saveTimer = undefined;
-			void this.flushSave();
-		}
+		this.teardownPendingSave();
+		this.currentInput?.setSaveHandler(undefined);
+		this.currentInput = undefined;
 		// Release per-URI diagnostics so closed files don't leak entries
 		// in the diagnostics service's internal Map.
 		if (this.currentResource) {
 			this.diagnosticsService.clear(this.currentResource);
 		}
 		this.pendingInit = undefined;
-		this.pendingSaveDoc = undefined;
 		this.currentResource = undefined;
 		this.webviewReady = false;
 		this.webviewMD.value?.release(this);
 		this.webviewMD.clear();
 		this.webviewListeners.clear();
 		super.clearInput();
+	}
+
+	override dispose(): void {
+		// Mirror `clearInput`'s flush so pane teardown paths that skip
+		// `clearInput` (split-close, drag-to-new-group) don't drop the
+		// last edit. Safe to call after `clearInput` already ran: the
+		// timer has been cleared and `pendingSaveDoc` is undefined, so
+		// `flushSave` short-circuits.
+		this.teardownPendingSave();
+		this.currentInput?.setSaveHandler(undefined);
+		this.currentInput = undefined;
+		super.dispose();
+	}
+
+	/**
+	 * Cancel any scheduled autosave and flush pending edits now. Called
+	 * from both `clearInput` and `dispose` so the two teardown paths
+	 * share one implementation.
+	 */
+	private teardownPendingSave(): void {
+		if (this.saveTimer) {
+			clearTimeout(this.saveTimer);
+			this.saveTimer = undefined;
+		}
+		if (this.pendingSaveDoc !== undefined) {
+			void this.flushSave();
+		}
+	}
+
+	/**
+	 * Force-flush the debounced autosave. Invoked via the
+	 * input.save() override so Ctrl+S writes immediately. Returns
+	 * whether the write succeeded; the input uses this to decide
+	 * whether to clear its dirty flag.
+	 */
+	private async forceFlushSave(): Promise<boolean> {
+		if (this.saveTimer) {
+			clearTimeout(this.saveTimer);
+			this.saveTimer = undefined;
+		}
+		if (this.pendingSaveDoc === undefined) {
+			// Nothing pending — already in sync with disk.
+			return true;
+		}
+		return await this.flushSave();
 	}
 
 	override layout(dimension: Dimension): void {
@@ -251,13 +325,16 @@ export class FxGraphEditorPane extends EditorPane {
 					this.webviewMD.value?.postMessage(this.pendingInit);
 					this.pendingInit = undefined;
 				}
-				// Replay the latest diagnostics for the open URI now
-				// that the webview is listening. The onDidChange
+				// Replay the latest trust diagnostics for the open URI
+				// now that the webview is listening. The onDidChange
 				// subscription drops messages posted while
-				// `webviewReady === false`.
+				// `webviewReady === false`. Codegen diagnostics are
+				// (re-)posted on the next flushSave; we don't cache
+				// them in a service because they're a function of the
+				// in-memory doc + generated Lua, not of the URI.
 				if (this.currentResource) {
 					const cached = this.diagnosticsService.get(this.currentResource);
-					this.webviewMD.value?.postMessage({ type: 'diagnostics', diagnostics: cached });
+					this.webviewMD.value?.postMessage({ type: 'trust-diagnostics', diagnostics: cached });
 				}
 				break;
 			case 'change':
@@ -265,6 +342,7 @@ export class FxGraphEditorPane extends EditorPane {
 				// Debounced so a sequence of rapid edits (drag, multi-pin
 				// connect) collapses into one filesystem write.
 				this.pendingSaveDoc = msg.doc;
+				this.currentInput?.setDirty(true);
 				if (this.saveTimer) { clearTimeout(this.saveTimer); }
 				this.saveTimer = setTimeout(() => {
 					this.saveTimer = undefined;
@@ -283,15 +361,22 @@ export class FxGraphEditorPane extends EditorPane {
 		}
 	}
 
-	private async flushSave(): Promise<void> {
+	private async flushSave(): Promise<boolean> {
 		const uri = this.currentResource;
 		const doc = this.pendingSaveDoc;
-		this.pendingSaveDoc = undefined;
-		if (!uri || doc === undefined) { return; }
+		const input = this.currentInput;
+		const docVersion = this.docVersion;
+		if (!uri || doc === undefined) { return true; }
 		try {
 			// Persist the canonical .fxgraph JSON.
 			const json = JSON.stringify(doc, null, 2) + '\n';
 			await this.fileService.writeFile(uri, VSBuffer.fromString(json));
+			// Only clear after the canonical write succeeds — if it threw,
+			// the snapshot stays so the next flush retries.
+			this.pendingSaveDoc = undefined;
+			// Reset save-failure dedup so a future failure (e.g. the
+			// user re-locks the file) surfaces a fresh notification.
+			this.lastSaveErrorUri = undefined;
 
 			// Regenerate the sibling .lua so the runtime sees the change
 			// without the user manually running cfx.fxgraph.compile. We
@@ -300,17 +385,60 @@ export class FxGraphEditorPane extends EditorPane {
 			const result = generateLua(doc as GraphDoc, { source: uri.path.split('/').pop() ?? '<fxgraph>' });
 			const luaUri = uri.with({ path: uri.path.replace(/\.fxgraph$/, '.lua') });
 			await this.fileService.writeFile(luaUri, VSBuffer.fromString(result.source));
-			if (result.errors.length > 0) {
-				this.logService.warn(`[cfx] fxgraph autosave: ${result.errors.length} codegen warning(s)`);
+
+			// Always post diagnostics — including an empty list — so the
+			// banner clears on a clean save. `docVersion` lets the
+			// webview discard stale results after a fast tab-switch.
+			this.webviewMD.value?.postMessage({
+				type: 'diagnostics',
+				docVersion,
+				diagnostics: result.diagnostics,
+			});
+			// Mirror the generated Lua to the webview so the in-graph
+			// preview overlay can show what the user just authored.
+			this.webviewMD.value?.postMessage({
+				type: 'lua-preview',
+				docVersion,
+				source: result.source,
+			});
+			const errorCount = result.diagnostics.filter((d) => d.severity === 'error').length;
+			if (errorCount > 0) {
+				this.logService.warn(`[cfx] fxgraph autosave: ${errorCount} codegen error(s)`);
 			}
 
-			// Refresh diagnostics after every save so the trust analyzer
+			// Refresh trust diagnostics after every save so the analyzer
 			// matches the on-disk doc + generated Lua. The service
 			// fires onDidChangeDiagnostics → our subscription forwards
-			// to the webview.
+			// to the webview over the `trust-diagnostics` channel.
 			this.publishDiagnostics(uri, doc);
+
+			// .fxgraph wrote successfully — the canonical source is on
+			// disk, so the tab is clean. (.lua sibling is a generated
+			// artifact; its codegen-error state is surfaced via the
+			// `diagnostics` message above, not via the dirty flag.)
+			input?.setDirty(false);
+			return true;
 		} catch (err) {
 			this.logService.error(`[cfx] failed to autosave ${uri.toString()}`, err);
+			// Surface the failure to the user — the dirty flag stays on
+			// (the tab still shows "●") but without a notification the
+			// user has no reason to think anything went wrong, since
+			// the visual edit they just made is still present in the
+			// webview. Dedupe by URI so a sustained lock (file held by
+			// another process) doesn't fire a toast every 300 ms.
+			const uriStr = uri.toString();
+			if (this.lastSaveErrorUri !== uriStr) {
+				this.lastSaveErrorUri = uriStr;
+				const filename = uri.path.split('/').pop() ?? '<fxgraph>';
+				this.notificationService.error(localize(
+					'cfx.fxgraph.saveFailed',
+					'Cfx: failed to save {0}: {1}',
+					filename,
+					err instanceof Error ? err.message : String(err),
+				));
+			}
+			// Leave dirty=true so the tab indicator stays on too.
+			return false;
 		}
 	}
 

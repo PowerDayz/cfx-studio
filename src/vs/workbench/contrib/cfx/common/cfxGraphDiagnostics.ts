@@ -6,10 +6,10 @@
 import { Event } from '../../../../base/common/event.js';
 import { URI } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
-import type { GraphDiagnostic } from '../_shared/visual/diagnostics.js';
+import type { TrustDiagnostic } from '../_shared/visual/diagnostics.js';
 
-export type { GraphDiagnostic } from '../_shared/visual/diagnostics.js';
-export { GraphDiagnosticSeverity } from '../_shared/visual/diagnostics.js';
+export type { TrustDiagnostic } from '../_shared/visual/diagnostics.js';
+export { TrustDiagnosticSeverity } from '../_shared/visual/diagnostics.js';
 
 /**
  * Per-file diagnostic state for `.fxgraph` documents. Producers
@@ -25,17 +25,17 @@ export { GraphDiagnosticSeverity } from '../_shared/visual/diagnostics.js';
  */
 export interface IGraphDiagnosticsChangeEvent {
 	readonly resource: URI;
-	readonly diagnostics: ReadonlyArray<GraphDiagnostic>;
+	readonly diagnostics: ReadonlyArray<TrustDiagnostic>;
 }
 
 export interface ICfxGraphDiagnosticsService {
 	readonly _serviceBrand: undefined;
 
 	/** Replace the diagnostic set for a URI. Fires the change event. */
-	set(resource: URI, diagnostics: ReadonlyArray<GraphDiagnostic>): void;
+	set(resource: URI, diagnostics: ReadonlyArray<TrustDiagnostic>): void;
 
 	/** Latest analyzer output for the URI, or [] if none. */
-	get(resource: URI): ReadonlyArray<GraphDiagnostic>;
+	get(resource: URI): ReadonlyArray<TrustDiagnostic>;
 
 	/** Drop the entry. Fires the change event with []. */
 	clear(resource: URI): void;

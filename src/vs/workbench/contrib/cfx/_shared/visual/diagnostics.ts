@@ -4,6 +4,128 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
+ * Two diagnostic families share this module — they're intentionally
+ * co-located because both speak about `.fxgraph` problems, but they
+ * stay distinct types so a consumer (banner vs. node overlay vs. trust
+ * audit) never has to discriminate at runtime.
+ *
+ * 1. `GraphDiagnostic` + `GraphDiagnosticCollector` — codegen + schema
+ *    migration findings. Authored by `codegen.ts` and `migrate.ts`,
+ *    rendered by the in-graph banner and the per-node "has-error" ring.
+ *    Carries a stable `DiagnosticCode` so the UI can group / filter.
+ *
+ * 2. `TrustDiagnostic` + `analyze()` — output of the static trust
+ *    analyzer (this file's lower half). Authored on every save by
+ *    `analyze(doc)`, published per-URI through
+ *    `ICfxGraphDiagnosticsService`, rendered as per-node border
+ *    overlays + tooltips via `diagOverlay`. Carries a `ruleId` instead
+ *    of a typed code so new rules don't have to extend a central union.
+ *
+ * The split mirrors the two pipelines the editor pane runs after
+ * every save: codegen → diagnostics-banner, trust analyzer →
+ * per-node overlay. Sharing the file keeps the import path stable
+ * (`_shared/visual/diagnostics.js`) for both sides.
+ */
+
+import type {
+	GraphDoc,
+	BNode,
+	ExecEdge,
+	ValueEdge,
+	ExecCallBNode,
+	EventBNode,
+} from './doc.js';
+import { runRules } from './diagnosticRules.js';
+
+// --- Family 1: codegen + migration diagnostics --------------------------
+
+export type DiagnosticSeverity = 'error' | 'warning' | 'info';
+
+/**
+ * Stable, machine-readable code for a diagnostic. Codes are namespaced
+ * by source so a future reader can grep callers (e.g. all
+ * `codegen:*` come from `codegen.ts`).
+ *
+ * Add a new code by extending this union; the collector won't accept
+ * arbitrary strings, so the type system enforces that every diagnostic
+ * is plumbed through. When introducing a new validation surface
+ * (e.g. `server:*` for server-authoritative checks), add its codes
+ * here so the UI doesn't have to guess.
+ */
+export type DiagnosticCode =
+	// Schema / migration
+	| 'schema:unknown-version'
+	| 'schema:malformed'
+	// Codegen
+	| 'codegen:exec-cycle'
+	| 'codegen:value-cycle'
+	| 'codegen:invalid-ident'
+	| 'codegen:missing-required-pin'
+	// Editor-level (webview-side validators)
+	| 'editor:variable-name-invalid'
+	| 'editor:duplicate-variable-name';
+
+export interface GraphDiagnostic {
+	severity: DiagnosticSeverity;
+	code: DiagnosticCode;
+	message: string;
+	/** Node this diagnostic is attached to (drives node highlight in UI). */
+	nodeId?: string;
+	/** Pin this diagnostic is attached to (future: pin-level highlight). */
+	pinId?: string;
+	/** Free-form source tag for grouping in UI (e.g. 'codegen', 'migrate', 'editor'). */
+	source: string;
+}
+
+/**
+ * Mutable collector handed around to validators. They push diagnostics
+ * via `error()`/`warning()`/`info()`; the host reads them out via
+ * `all()` and forwards to the webview.
+ *
+ * The collector is single-use — instantiate one per validation pass.
+ * Reusing one across passes would mix diagnostics from different
+ * docVersions and confuse the webview's race-guard.
+ */
+export class GraphDiagnosticCollector {
+	private readonly items: GraphDiagnostic[] = [];
+
+	add(d: GraphDiagnostic): void {
+		this.items.push(d);
+	}
+
+	error(code: DiagnosticCode, message: string, source: string, ctx?: { nodeId?: string; pinId?: string }): void {
+		this.items.push({ severity: 'error', code, message, source, nodeId: ctx?.nodeId, pinId: ctx?.pinId });
+	}
+
+	warning(code: DiagnosticCode, message: string, source: string, ctx?: { nodeId?: string; pinId?: string }): void {
+		this.items.push({ severity: 'warning', code, message, source, nodeId: ctx?.nodeId, pinId: ctx?.pinId });
+	}
+
+	info(code: DiagnosticCode, message: string, source: string, ctx?: { nodeId?: string; pinId?: string }): void {
+		this.items.push({ severity: 'info', code, message, source, nodeId: ctx?.nodeId, pinId: ctx?.pinId });
+	}
+
+	/** All diagnostics, in insertion order. */
+	all(): readonly GraphDiagnostic[] {
+		return this.items;
+	}
+
+	hasErrors(): boolean {
+		for (const d of this.items) {
+			if (d.severity === 'error') { return true; }
+		}
+		return false;
+	}
+
+	/** Subset attached to a specific node — drives node-level highlight. */
+	forNode(nodeId: string): readonly GraphDiagnostic[] {
+		return this.items.filter((d) => d.nodeId === nodeId);
+	}
+}
+
+// --- Family 2: trust analyzer diagnostics --------------------------------
+
+/**
  * Static analysis pass over a GraphDoc. Returns structured diagnostics
  * keyed to node ids so the editor can render overlays on the relevant
  * nodes. Runs on every save (debounced) and is intentionally fast — the
@@ -23,16 +145,6 @@
  * on every addition.
  */
 
-import type {
-	GraphDoc,
-	BNode,
-	ExecEdge,
-	ValueEdge,
-	ExecCallBNode,
-	EventBNode,
-} from './doc.js';
-import { runRules } from './diagnosticRules.js';
-
 /**
  * `${nodeId}|${pinId}` — a stable pin key suitable for Set / Map use.
  * Exported so rule and test code can build / inspect keys the same way
@@ -42,16 +154,16 @@ export function pinKey(nodeId: string, pinId: string): string {
 	return `${nodeId}|${pinId}`;
 }
 
-export const enum GraphDiagnosticSeverity {
+export const enum TrustDiagnosticSeverity {
 	Error = 'error',
 	Warning = 'warning',
 	Info = 'info',
 }
 
-export interface GraphDiagnostic {
+export interface TrustDiagnostic {
 	/** Stable rule identifier; used by the editor to group / filter / suppress. */
 	readonly ruleId: string;
-	readonly severity: GraphDiagnosticSeverity;
+	readonly severity: TrustDiagnosticSeverity;
 	readonly message: string;
 	/** Primary node the diagnostic attaches to (rendered as a border overlay). */
 	readonly nodeId?: string;
@@ -87,7 +199,7 @@ export interface AnalysisContext {
  * the per-rule order; the diagnostics service may sort by severity
  * before posting to the webview.
  */
-export function analyze(doc: GraphDoc): GraphDiagnostic[] {
+export function analyze(doc: GraphDoc): TrustDiagnostic[] {
 	const ctx = buildContext(doc);
 	return runRules(ctx);
 }

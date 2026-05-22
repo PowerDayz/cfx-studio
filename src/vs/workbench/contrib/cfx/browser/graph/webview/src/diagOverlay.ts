@@ -13,20 +13,20 @@
  * every node-type component.
  */
 
-import { type GraphDiagnostic, GraphDiagnosticSeverity } from '../../../../_shared/visual/diagnostics.js';
+import { type TrustDiagnostic, TrustDiagnosticSeverity } from '../../../../_shared/visual/diagnostics.js';
 
 export interface DiagOverlay {
 	className: string;
 	title: string | undefined;
 }
 
-export function diagOverlay(nodeDiagnostics: ReadonlyArray<GraphDiagnostic> | undefined): DiagOverlay {
+export function diagOverlay(nodeDiagnostics: ReadonlyArray<TrustDiagnostic> | undefined): DiagOverlay {
 	if (!nodeDiagnostics || nodeDiagnostics.length === 0) {
 		return { className: '', title: undefined };
 	}
 	const sev =
-		nodeDiagnostics.some((d) => d.severity === GraphDiagnosticSeverity.Error) ? 'error' :
-			nodeDiagnostics.some((d) => d.severity === GraphDiagnosticSeverity.Warning) ? 'warning' :
+		nodeDiagnostics.some((d) => d.severity === TrustDiagnosticSeverity.Error) ? 'error' :
+			nodeDiagnostics.some((d) => d.severity === TrustDiagnosticSeverity.Warning) ? 'warning' :
 				'info';
 	const title = nodeDiagnostics.map((d) => `[${d.severity}] ${d.message}`).join('\n\n');
 	return { className: `diag-${sev}`, title };

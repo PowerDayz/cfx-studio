@@ -11,7 +11,7 @@ import {
 	registerSingleton,
 } from '../../../../../platform/instantiation/common/extensions.js';
 import {
-	type GraphDiagnostic,
+	type TrustDiagnostic,
 	ICfxGraphDiagnosticsService,
 	type IGraphDiagnosticsChangeEvent,
 } from '../../common/cfxGraphDiagnostics.js';
@@ -26,21 +26,21 @@ import {
 class CfxGraphDiagnosticsService extends Disposable implements ICfxGraphDiagnosticsService {
 	declare readonly _serviceBrand: undefined;
 
-	private readonly _byResource = new Map<string, ReadonlyArray<GraphDiagnostic>>();
+	private readonly _byResource = new Map<string, ReadonlyArray<TrustDiagnostic>>();
 
 	private readonly _onDidChangeDiagnostics =
 		this._register(new Emitter<IGraphDiagnosticsChangeEvent>());
 	readonly onDidChangeDiagnostics: Event<IGraphDiagnosticsChangeEvent> =
 		this._onDidChangeDiagnostics.event;
 
-	set(resource: URI, diagnostics: ReadonlyArray<GraphDiagnostic>): void {
+	set(resource: URI, diagnostics: ReadonlyArray<TrustDiagnostic>): void {
 		const key = resource.toString();
 		const next = diagnostics.length === 0 ? [] : diagnostics;
 		this._byResource.set(key, next);
 		this._onDidChangeDiagnostics.fire({ resource, diagnostics: next });
 	}
 
-	get(resource: URI): ReadonlyArray<GraphDiagnostic> {
+	get(resource: URI): ReadonlyArray<TrustDiagnostic> {
 		return this._byResource.get(resource.toString()) ?? [];
 	}
 

@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { analyze, GraphDiagnosticSeverity } from '../../_shared/visual/diagnostics.js';
+import { analyze, TrustDiagnosticSeverity } from '../../_shared/visual/diagnostics.js';
 import { GRAPH_DOC_VERSION, type GraphDoc } from '../../_shared/visual/doc.js';
 
 suite('Cfx fxgraph diagnostics', () => {
@@ -54,7 +54,7 @@ suite('Cfx fxgraph diagnostics', () => {
 		const diags = analyze(doc);
 		const entityDiags = diags.filter((d) => d.ruleId === 'entity-on-net-trigger');
 		assert.strictEqual(entityDiags.length, 1);
-		assert.strictEqual(entityDiags[0].severity, GraphDiagnosticSeverity.Error);
+		assert.strictEqual(entityDiags[0].severity, TrustDiagnosticSeverity.Error);
 		assert.strictEqual(entityDiags[0].nodeId, 'c1');
 		assert.strictEqual(entityDiags[0].pinId, 'c1:p1');
 	});
@@ -120,7 +120,7 @@ suite('Cfx fxgraph diagnostics', () => {
 		};
 		const diags = analyze(doc).filter((d) => d.ruleId === 'untrusted-to-cross-context-send');
 		assert.strictEqual(diags.length, 1);
-		assert.strictEqual(diags[0].severity, GraphDiagnosticSeverity.Warning);
+		assert.strictEqual(diags[0].severity, TrustDiagnosticSeverity.Warning);
 		assert.strictEqual(diags[0].nodeId, 'c1');
 		assert.strictEqual(diags[0].pinId, 'c1:p2');
 	});
@@ -237,7 +237,7 @@ suite('Cfx fxgraph diagnostics', () => {
 		};
 		const diags = analyze(doc).filter((d) => d.ruleId === 'net-handler-no-source-check');
 		assert.strictEqual(diags.length, 1);
-		assert.strictEqual(diags[0].severity, GraphDiagnosticSeverity.Info);
+		assert.strictEqual(diags[0].severity, TrustDiagnosticSeverity.Info);
 		assert.strictEqual(diags[0].nodeId, 'e1');
 	});
 

@@ -100,6 +100,15 @@ html, body, #cfx-fxgraph-root {
 	outline-offset: 1px;
 }
 
+/* Nodes with at least one error-severity diagnostic get a red ring
+ * (drawn as a box-shadow so it doesn't conflict with the focus
+ * outline above when the user selects them via the banner's "show
+ * node" button). */
+.bnode.has-error {
+	box-shadow: 0 0 0 2px var(--vscode-errorForeground, #f48771),
+		0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
 .bnode .pin-row {
 	/* Each pin row is its own positioning context so the React-Flow
 	 * Handles inside it can anchor to the row's vertical centre instead
